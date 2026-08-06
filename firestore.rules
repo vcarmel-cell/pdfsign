@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'v.carmel@gmail.com';
+    }
+    function signedIn() {
+      return request.auth != null;
+    }
+    // אין Firebase Storage באפליקציה הזו - קובצי PDF נשמרים כ-Base64 בתוך
+    // המסמך עצמו, ולכן חייבים להישאר קטנים מספיק כדי לא לחרוג ממגבלת 1MB
+    // למסמך ב-Firestore (ראו MAX_PDF_BYTES ב-js/pdf-field-utils.js).
+    function pdfFieldOk(data) {
+      return !('pdfBase64' in data) || data.pdfBase64.size() < 750000;
+    }
+
+    match /templates/{templateId} {
+      // fill.html שולף תבנית לפי מזהה ידוע - get פתוח לכל מחובר (כולל אנונימי)
+      allow get: if signedIn();
+      // list מוגבל למנהל, כדי שלא יהיה אפשר לספור/לגלות את כל המסמכים העסקיים
+      allow list: if isAdmin();
+      allow create, update: if isAdmin() && pdfFieldOk(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /submissions/{submissionId} {
+      allow get, list: if isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.templateId is string
+        && request.resource.data.filledBy is string
+        && request.resource.data.createdAt == request.time
+        && pdfFieldOk(request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+  }
+}

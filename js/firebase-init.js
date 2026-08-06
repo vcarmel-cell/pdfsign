@@ -1,0 +1,49 @@
+// ─── הגדרות (למלא לפי README.md) ────────────────────────────────
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDQu1NS7lkTd4-bLDhYpbTc6HdjqGS7LEs",
+  authDomain: "pdfsign-b5230.firebaseapp.com",
+  projectId: "pdfsign-b5230",
+  storageBucket: "pdfsign-b5230.firebasestorage.app",
+  messagingSenderId: "740254268902",
+  appId: "1:740254268902:web:abced3a8768487a6ad6a27"
+};
+
+const EMAILJS_CONFIG = {
+  publicKey: "PASTE_EMAILJS_PUBLIC_KEY",
+  serviceId: "PASTE_EMAILJS_SERVICE_ID",
+  templateId: "PASTE_EMAILJS_TEMPLATE_ID"
+};
+
+const ADMIN_EMAIL = "v.carmel@gmail.com";
+
+// ─── טעינת ספריות חיצוניות (CDN, בזו אחר זו) ─────────────────────
+function loadScripts(urls) {
+  return new Promise((resolve, reject) => {
+    function next(i) {
+      if (i >= urls.length) return resolve(true);
+      const s = document.createElement('script');
+      s.src = urls[i];
+      s.onload = () => next(i + 1);
+      s.onerror = () => reject(new Error('נכשלה טעינת ' + urls[i]));
+      document.head.appendChild(s);
+    }
+    next(0);
+  });
+}
+
+// אין שימוש ב-Firebase Storage (דורש שדרוג לתוכנית Blaze) - קובצי PDF נשמרים
+// כ-Base64 בתוך מסמכי Firestore עצמם, ראו MAX_PDF_BYTES ב-pdf-field-utils.js.
+const FIREBASE_SDK_URLS = [
+  'https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js',
+  'https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js'
+];
+
+async function fbInit() {
+  if (typeof firebase === 'undefined') throw new Error('Firebase SDK לא נטען');
+  if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+  return {
+    db: firebase.firestore(),
+    auth: firebase.auth()
+  };
+}

@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>מילוי טופס</title>
+<style>
+  :root { --primary: #2563eb; --primary-dark: #1d4ed8; --danger: #dc2626; --border: #d1d5db; --bg: #f3f4f6; --text: #111827; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+  header { background: #111827; color: white; padding: .9rem 1.2rem; }
+  header h1 { font-size: 1.1rem; margin: 0; }
+  main { max-width: 960px; margin: 0 auto; padding: 1rem 1rem 6rem 1rem; }
+  .card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 1.4rem; max-width: 420px; margin: 3rem auto; text-align: center; }
+  button { background: var(--primary); color: white; border: none; border-radius: 6px; padding: .6rem 1.1rem; font-size: .95rem; cursor: pointer; }
+  button:hover { background: var(--primary-dark); }
+  input[type=text] { width: 100%; padding: .55rem .7rem; border: 1px solid var(--border); border-radius: 6px; font-size: .95rem; margin: .8rem 0; }
+  .error { color: var(--danger); font-size: .88rem; }
+
+  .modal { position: fixed; inset: 0; background: rgba(17,24,39,.55); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 1rem; }
+  .modal-box { background: white; border-radius: 12px; padding: 1.6rem; max-width: 380px; width: 100%; text-align: center; }
+
+  .page-wrapper { position: relative; margin: 0 auto 2rem auto; background: #fff; border: 1px solid var(--border); touch-action: pan-y; }
+  .page-wrapper canvas { display: block; }
+
+  .fill-field-box { position: absolute; }
+  .fill-field-label {
+    position: absolute; top: -17px; right: 0; font-size: 10px; background: #fff; padding: 0 4px;
+    border-radius: 3px; color: #374151; white-space: nowrap; box-shadow: 0 0 0 1px #e5e7eb;
+  }
+  .fill-input {
+    width: 100%; height: 100%; border: 1.5px solid var(--primary); border-radius: 3px;
+    padding: 0 5px; font-size: 13px; background: rgba(37,99,235,.06); box-sizing: border-box; font-family: inherit;
+  }
+  .fill-checkbox { width: 100%; height: 100%; cursor: pointer; accent-color: var(--primary); }
+  .signature-canvas {
+    width: 100%; height: 100%; border: 1.5px dashed #7c3aed; border-radius: 4px;
+    background: rgba(124,58,237,.05); touch-action: none; display: block;
+  }
+  .sig-clear-btn {
+    position: absolute; left: 2px; bottom: 2px; font-size: 9px; padding: 2px 6px;
+    background: #7c3aed; border-radius: 4px;
+  }
+
+  .submit-bar {
+    position: fixed; bottom: 0; right: 0; left: 0; background: white; border-top: 1px solid var(--border);
+    padding: .8rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  }
+  .submit-bar .error { flex: 1; margin: 0; }
+  #download-link {
+    display: inline-block; margin-top: 1rem; background: var(--primary); color: white;
+    padding: .6rem 1.2rem; border-radius: 6px; text-decoration: none;
+  }
+</style>
+</head>
+<body>
+
+<header><h1 id="page-title">מילוי טופס</h1></header>
+
+<main>
+  <div id="view-loading"><p style="text-align:center; margin-top:3rem;">טוען...</p></div>
+
+  <div id="view-invalid" style="display:none">
+    <div class="card"><p>הקישור אינו תקף, או שהטופס אינו פעיל יותר.</p></div>
+  </div>
+
+  <div id="view-fill" style="display:none">
+    <div id="fill-pages"></div>
+    <div class="submit-bar">
+      <p id="validation-error" class="error"></p>
+      <button type="button" id="submit-btn">שליחת הטופס</button>
+    </div>
+  </div>
+
+  <div id="view-submitting" style="display:none">
+    <p style="text-align:center; margin-top:3rem;">שולח את הטופס, נא להמתין...</p>
+  </div>
+
+  <div id="view-success" style="display:none">
+    <div class="card">
+      <h2>הטופס נשלח בהצלחה</h2>
+      <p>תודה, <span id="success-name"></span>. עותק חתום נשמר במערכת.</p>
+      <a id="download-link">הורדת עותק אישי</a>
+      <p id="success-note" class="error"></p>
+    </div>
+  </div>
+</main>
+
+<div id="view-name-modal" class="modal" style="display:none">
+  <div class="modal-box">
+    <h2 id="name-modal-title"></h2>
+    <p>לפני מילוי הטופס, נא הזינו את שמכם המלא:</p>
+    <input type="text" id="filler-name-input" placeholder="שם מלא" />
+    <p id="name-error" class="error"></p>
+    <button type="button" id="start-fill-btn">המשך למילוי</button>
+  </div>
+</div>
+
+<script src="js/firebase-init.js"></script>
+<script src="js/pdf-field-utils.js"></script>
+<script>
+let db, auth;
+let template = null;
+let templateId = null;
+let fillerName = '';
+let pdfDocJs = null;
+const pageBoxSizes = {};
+let fieldRuntime = {};
+let flattenedBytesCache = null;
+
+function showView(name) {
+  ['loading', 'invalid', 'fill', 'submitting', 'success'].forEach(v => {
+    document.getElementById('view-' + v).style.display = (v === name) ? 'block' : 'none';
+  });
+  document.getElementById('view-name-modal').style.display = (name === 'name-modal') ? 'flex' : 'none';
+}
+
+// ─── רינדור המסמך ומיקום שדות אינטראקטיביים ──────────────
+async function renderFillDocument() {
+  pdfDocJs = await loadPdfDocument(base64ToUint8Array(template.pdfBase64));
+  const container = document.getElementById('fill-pages');
+  container.innerHTML = '';
+  fieldRuntime = {};
+
+  for (let i = 0; i < template.pageCount; i++) {
+    const page = await pdfDocJs.getPage(i + 1);
+    const wrapper = document.createElement('div');
+    wrapper.className = 'page-wrapper';
+    const canvas = document.createElement('canvas');
+    wrapper.appendChild(canvas);
+    container.appendChild(wrapper);
+
+    const cssWidth = Math.min(container.clientWidth || 900, 900);
+    const boxSize = await renderPdfPageToCanvas(page, canvas, cssWidth);
+    wrapper.style.width = boxSize.cssWidth + 'px';
+    wrapper.style.height = boxSize.cssHeight + 'px';
+    pageBoxSizes[i] = boxSize;
+
+    (template.fields || []).filter(f => f.page === i).forEach(field => {
+      const rectPx = pctRectToPx(field, boxSize.cssWidth, boxSize.cssHeight);
+      wrapper.appendChild(createFillFieldEl(field, rectPx));
+    });
+  }
+}
+
+function createFillFieldEl(field, rectPx) {
+  const box = document.createElement('div');
+  box.className = 'fill-field-box';
+  applyRectPx(box, rectPx);
+
+  const labelTag = document.createElement('div');
+  labelTag.className = 'fill-field-label';
+  labelTag.textContent = field.label + (field.required ? ' *' : '');
+  box.appendChild(labelTag);
+
+  if (field.type === 'text' || field.type === 'date' || field.type === 'number') {
+    const input = document.createElement('input');
+    input.type = field.type === 'date' ? 'date' : (field.type === 'number' ? 'number' : 'text');
+    if (field.type === 'number') input.inputMode = 'numeric';
+    input.className = 'fill-input';
+    box.appendChild(input);
+    fieldRuntime[field.id] = {
+      isFilled: () => input.value.trim() !== '',
+      getStamp: () => ({ kind: 'text', value: input.value.trim() })
+    };
+  } else if (field.type === 'checkbox') {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.className = 'fill-checkbox';
+    box.appendChild(input);
+    fieldRuntime[field.id] = {
+      isFilled: () => input.checked,
+      getStamp: () => ({ kind: 'checkbox', checked: input.checked })
+    };
+  } else if (field.type === 'signature') {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'signature-canvas';
+    box.appendChild(canvas);
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'sig-clear-btn';
+    clearBtn.textContent = 'נקה';
+    box.appendChild(clearBtn);
+
+    let pad = null;
+    requestAnimationFrame(() => { pad = initSignaturePad(canvas); });
+    clearBtn.addEventListener('click', () => { if (pad) pad.clear(); });
+
+    fieldRuntime[field.id] = {
+      isFilled: () => !!(pad && pad.hasDrawn()),
+      getStamp: () => ({ kind: 'signature', dataUrl: pad ? pad.getDataURL() : null })
+    };
+  }
+
+  return box;
+}
+
+function validateRequired() {
+  const missing = [];
+  (template.fields || []).forEach(field => {
+    if (!field.required) return;
+    const rt = fieldRuntime[field.id];
+    if (!rt || !rt.isFilled()) missing.push(field.label);
+  });
+  return missing;
+}
+
+// ─── רינדור טקסט עברי כתמונה (עוקף בעיות קידוד גופנים ב-PDF) ───
+function renderTextToPngDataUrl(text, widthPt, heightPt, fontSizePt) {
+  const scale = 3; // רזולוציה גבוהה כדי שהטקסט ייראה חד גם בהגדלה
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(widthPt * scale));
+  canvas.height = Math.max(1, Math.round(heightPt * scale));
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  ctx.font = fontSizePt + 'px Arial, "Noto Sans Hebrew", sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.direction = 'rtl';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#111';
+  ctx.fillText(text, widthPt - 2, heightPt / 2, widthPt - 4);
+  return canvas.toDataURL('image/png');
+}
+
+// ─── שליחת הטופס ──────────────────────────────────────────
+document.getElementById('submit-btn').addEventListener('click', async () => {
+  const errorEl = document.getElementById('validation-error');
+  const missing = validateRequired();
+  if (missing.length) {
+    errorEl.textContent = 'נא למלא: ' + missing.join(', ');
+    return;
+  }
+  errorEl.textContent = '';
+  showView('submitting');
+
+  try {
+    const originalBytes = base64ToUint8Array(template.pdfBase64);
+    const pdfDoc = await PDFLib.PDFDocument.load(originalBytes);
+    const values = {};
+
+    for (const field of (template.fields || [])) {
+      const rt = fieldRuntime[field.id];
+      if (!rt) continue;
+      const stamp = rt.getStamp();
+      const page = pdfDoc.getPage(field.page);
+      const coords = pctFieldToPdfCoords(field, page.getWidth(), page.getHeight());
+
+      if (stamp.kind === 'text') {
+        values[field.id] = stamp.value;
+        if (stamp.value) {
+          const dataUrl = renderTextToPngDataUrl(stamp.value, coords.wPt, coords.hPt, field.fontSize || 12);
+          const pngBytes = await (await fetch(dataUrl)).arrayBuffer();
+          const img = await pdfDoc.embedPng(pngBytes);
+          page.drawImage(img, { x: coords.xPt, y: coords.yPt, width: coords.wPt, height: coords.hPt });
+        }
+      } else if (stamp.kind === 'checkbox') {
+        values[field.id] = stamp.checked;
+        if (stamp.checked) {
+          const pad = Math.min(coords.wPt, coords.hPt) * 0.18;
+          const thickness = Math.max(1, Math.min(coords.wPt, coords.hPt) * 0.12);
+          const color = PDFLib.rgb(0, 0, 0);
+          page.drawLine({ start: { x: coords.xPt + pad, y: coords.yPt + pad }, end: { x: coords.xPt + coords.wPt - pad, y: coords.yPt + coords.hPt - pad }, thickness, color });
+          page.drawLine({ start: { x: coords.xPt + coords.wPt - pad, y: coords.yPt + pad }, end: { x: coords.xPt + pad, y: coords.yPt + coords.hPt - pad }, thickness, color });
+        }
+      } else if (stamp.kind === 'signature') {
+        values[field.id] = true;
+        if (stamp.dataUrl) {
+          const pngBytes = await (await fetch(stamp.dataUrl)).arrayBuffer();
+          const img = await pdfDoc.embedPng(pngBytes);
+          page.drawImage(img, { x: coords.xPt, y: coords.yPt, width: coords.wPt, height: coords.hPt });
+        }
+      }
+    }
+
+    const flattenedBytes = await pdfDoc.save();
+    flattenedBytesCache = flattenedBytes;
+    const pdfBase64 = uint8ToBase64(flattenedBytes);
+    // אין Firebase Storage - הקובץ נשמר כ-Base64 בתוך מסמך Firestore עצמו,
+    // ולכן חייב להישאר קטן מספיק כדי לא לחרוג ממגבלת 1MB למסמך.
+    const savedInSystem = pdfBase64.length <= MAX_PDF_BASE64_BYTES;
+    const emailAttachmentOk = flattenedBytes.length <= EMAILJS_MAX_ATTACHMENT_BYTES;
+
+    const submissionId = db.collection('submissions').doc().id;
+    const submissionDoc = {
+      id: submissionId,
+      templateId: template.id,
+      templateName: template.name,
+      filledBy: fillerName,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      values: values
+    };
+    if (savedInSystem) submissionDoc.pdfBase64 = pdfBase64;
+
+    await db.collection('submissions').doc(submissionId).set(submissionDoc);
+
+    sendEmailNotification(pdfBase64, emailAttachmentOk).catch(err => console.warn('שליחת מייל ההתראה נכשלה (ההגשה עצמה נשמרה בהצלחה):', err));
+
+    showSuccessScreen(flattenedBytes, savedInSystem);
+  } catch (err) {
+    showView('fill');
+    document.getElementById('validation-error').textContent = 'שגיאה בשליחת הטופס: ' + err.message;
+  }
+});
+
+async function sendEmailNotification(pdfBase64, includeAttachment) {
+  if (!EMAILJS_CONFIG.publicKey || EMAILJS_CONFIG.publicKey.startsWith('PASTE')) return;
+  const params = {
+    to_email: template.notifyEmail || ADMIN_EMAIL,
+    template_name: template.name,
+    filler_name: fillerName,
+    submitted_at: new Date().toLocaleString('he-IL')
+  };
+  if (includeAttachment) {
+    params.pdf_attachment = 'data:application/pdf;base64,' + pdfBase64;
+  }
+  await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, params);
+}
+
+function showSuccessScreen(bytes, savedInSystem) {
+  document.getElementById('success-name').textContent = fillerName;
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const link = document.getElementById('download-link');
+  link.href = url;
+  link.download = (template.name || 'document') + '.pdf';
+  document.getElementById('success-note').textContent = savedInSystem
+    ? ''
+    : 'שימו לב: הקובץ היה גדול מדי לשמירה במערכת - הקפידו להוריד עותק כעת.';
+  showView('success');
+}
+
+// ─── אתחול ───────────────────────────────────────────────
+document.getElementById('start-fill-btn').addEventListener('click', async () => {
+  const nameInput = document.getElementById('filler-name-input');
+  const name = nameInput.value.trim();
+  if (!name) {
+    document.getElementById('name-error').textContent = 'נא להזין שם.';
+    nameInput.focus();
+    return;
+  }
+  fillerName = name;
+  showView('fill');
+  try {
+    await renderFillDocument();
+  } catch (err) {
+    document.getElementById('validation-error').textContent = 'שגיאה בטעינת המסמך: ' + err.message;
+  }
+});
+
+async function init() {
+  const params = new URLSearchParams(location.search);
+  templateId = params.get('id');
+  if (!templateId) { showView('invalid'); return; }
+
+  await loadScripts(FIREBASE_SDK_URLS);
+  const services = await fbInit();
+  db = services.db; auth = services.auth;
+
+  await loadPdfJs();
+  await loadScripts([PDF_LIB_SCRIPT_URL, EMAILJS_SCRIPT_URL]);
+  if (typeof emailjs !== 'undefined' && EMAILJS_CONFIG.publicKey && !EMAILJS_CONFIG.publicKey.startsWith('PASTE')) {
+    emailjs.init({ publicKey: EMAILJS_CONFIG.publicKey });
+  }
+
+  await auth.signInAnonymously();
+
+  const doc = await db.collection('templates').doc(templateId).get();
+  if (!doc.exists || doc.data().active === false) { showView('invalid'); return; }
+
+  template = Object.assign({ id: doc.id }, doc.data());
+  document.getElementById('page-title').textContent = template.name;
+  document.getElementById('name-modal-title').textContent = template.name;
+  showView('name-modal');
+}
+
+init().catch(err => {
+  document.body.innerHTML = '<div style="padding:2rem">שגיאה בטעינת הטופס: ' + err.message + '</div>';
+});
+</script>
+</body>
+</html>

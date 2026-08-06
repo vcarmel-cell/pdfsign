@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ניהול טפסי PDF</title>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --danger: #dc2626;
+    --border: #d1d5db;
+    --bg: #f3f4f6;
+    --text-muted: #6b7280;
+    --text: #111827;
+    --field-text: #2563eb;
+    --field-number: #0891b2;
+    --field-date: #059669;
+    --field-checkbox: #d97706;
+    --field-signature: #7c3aed;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    background: #111827;
+    color: white;
+    padding: .9rem 1.2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .5rem;
+  }
+  header h1 { font-size: 1.15rem; margin: 0; }
+  #user-bar { display: none; align-items: center; gap: .8rem; font-size: .9rem; }
+  #user-bar button { background: #374151; color: white; border: none; padding: .35rem .7rem; border-radius: 6px; cursor: pointer; }
+  main { max-width: 1000px; margin: 0 auto; padding: 1rem; }
+  .view { display: none; }
+  h2 { font-size: 1.05rem; }
+  form { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+  input[type=email], input[type=password], input[type=text], input[type=file] {
+    padding: .5rem .6rem; border: 1px solid var(--border); border-radius: 6px; font-size: .9rem;
+  }
+  button {
+    background: var(--primary); color: white; border: none; border-radius: 6px;
+    padding: .5rem .9rem; font-size: .9rem; cursor: pointer;
+  }
+  button:hover { background: var(--primary-dark); }
+  button.secondary { background: #6b7280; }
+  button.danger { background: var(--danger); }
+  .error { color: var(--danger); font-size: .85rem; }
+  .card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+
+  #view-login .card, #view-unauthorized .card { max-width: 360px; margin: 3rem auto; text-align: center; }
+
+  .template-row {
+    background: white; border: 1px solid var(--border); border-radius: 10px;
+    padding: .8rem 1rem; margin-bottom: .6rem; display: flex; flex-wrap: wrap;
+    align-items: center; gap: .6rem; justify-content: space-between;
+  }
+  .t-main { display: flex; flex-direction: column; gap: .15rem; min-width: 160px; }
+  .t-meta { color: var(--text-muted); font-size: .8rem; }
+  .t-active { font-size: .8rem; display: flex; align-items: center; gap: .3rem; white-space: nowrap; }
+  .t-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+  .t-actions button { font-size: .8rem; padding: .4rem .6rem; }
+
+  .editor-layout { display: flex; gap: 1rem; align-items: flex-start; }
+  .toolbar {
+    display: flex; flex-direction: column; gap: .6rem;
+    flex: 0 0 170px; position: sticky; top: 1rem;
+  }
+  .tool-btn {
+    background: white; color: var(--text); border: 1px solid var(--border);
+    padding: .9rem 1rem; font-size: 1rem; border-radius: 10px;
+  }
+  .tool-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+  #save-fields-btn { padding: .9rem 1rem; font-size: 1rem; border-radius: 10px; }
+  #editor-pages { flex: 1; min-width: 0; }
+  @media (max-width: 700px) {
+    .editor-layout { flex-direction: column; }
+    .toolbar { flex-direction: row; flex-wrap: wrap; width: 100%; position: static; }
+    .toolbar .tool-btn, .toolbar #save-fields-btn { flex: 1 1 auto; }
+  }
+  .share-row, .notify-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .6rem; }
+  .share-row input, .notify-row input { flex: 1; min-width: 200px; }
+  #editor-hint { font-size: .82rem; color: var(--text-muted); margin-bottom: .8rem; }
+
+  .page-wrapper {
+    position: relative; margin: 0 auto 1.2rem auto; background: #fff;
+    border: 1px solid var(--border); touch-action: none; user-select: none;
+  }
+  .page-wrapper canvas { display: block; }
+  .draft-rect {
+    position: absolute; border: 2px dashed var(--primary); background: rgba(37,99,235,.1); pointer-events: none;
+  }
+
+  .field-box {
+    position: absolute; border: 2px solid var(--field-text); background: rgba(37,99,235,.12);
+    display: flex; flex-direction: column; overflow: visible;
+  }
+  .field-box.type-number { border-color: var(--field-number); background: rgba(8,145,178,.12); }
+  .field-box.type-date { border-color: var(--field-date); background: rgba(5,150,105,.12); }
+  .field-box.type-checkbox { border-color: var(--field-checkbox); background: rgba(217,119,6,.12); }
+  .field-box.type-signature { border-color: var(--field-signature); background: rgba(124,58,237,.12); }
+
+  .field-header {
+    display: flex; align-items: center; gap: 2px; background: rgba(255,255,255,.95);
+    font-size: 10px; padding: 1px 2px; white-space: nowrap;
+  }
+  .drag-handle { cursor: move; padding: 0 2px; }
+  .field-label-input { flex: 1; min-width: 20px; border: none; background: transparent; font-size: 10px; padding: 0; }
+  .field-required { display: flex; align-items: center; gap: 1px; font-size: 9px; }
+  .field-delete { background: transparent; color: var(--danger); border: none; padding: 0 3px; font-size: 13px; line-height: 1; cursor: pointer; }
+  .field-body { flex: 1; font-size: 10px; color: var(--text-muted); padding: 1px 3px; pointer-events: none; }
+  .resize-handle {
+    position: absolute; width: 12px; height: 12px; right: -2px; bottom: -2px;
+    background: #333; cursor: nwse-resize; border-radius: 2px;
+  }
+
+  .submission-row {
+    background: white; border: 1px solid var(--border); border-radius: 8px;
+    padding: .6rem .8rem; margin-bottom: .4rem; display: flex; flex-wrap: wrap;
+    align-items: center; gap: .8rem; justify-content: space-between; font-size: .88rem;
+  }
+  .sub-name { font-weight: 600; }
+  .sub-date { color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ניהול טפסי PDF</h1>
+  <div id="user-bar">
+    <span id="current-user-email"></span>
+    <button id="logout-btn">התנתקות</button>
+  </div>
+</header>
+
+<main>
+
+  <section id="view-login" class="view">
+    <div class="card">
+      <h2>כניסת מנהל</h2>
+      <form id="login-form" style="flex-direction:column;">
+        <input type="email" id="login-email" placeholder="אימייל" required />
+        <input type="password" id="login-password" placeholder="סיסמה" required />
+        <button type="submit">כניסה</button>
+      </form>
+      <p class="error" id="login-error"></p>
+    </div>
+  </section>
+
+  <section id="view-unauthorized" class="view">
+    <div class="card">
+      <p>המשתמש המחובר אינו מורשה לגשת לניהול המערכת.</p>
+    </div>
+  </section>
+
+  <section id="view-templates" class="view">
+    <h2>תבניות מסמכים</h2>
+    <div class="card">
+      <form id="upload-form">
+        <input type="text" id="upload-name" placeholder="שם התבנית" required />
+        <input type="file" id="upload-file" accept="application/pdf" required />
+        <button type="submit">העלאה ויצירת תבנית</button>
+      </form>
+      <p style="font-size:.8rem; color:var(--text-muted); margin:0 0 .4rem 0;">גודל מקסימלי לקובץ: כ-500KB (מתאים לטפסים/חוזים מבוססי-טקסט; מסמכים סרוקים כבדים לא יתקבלו).</p>
+      <p class="error" id="upload-error"></p>
+    </div>
+    <div id="templates-list"></div>
+  </section>
+
+  <section id="view-editor" class="view">
+    <button type="button" id="back-to-templates-btn" class="secondary">← חזרה לרשימת התבניות</button>
+    <h2 id="editor-title"></h2>
+
+    <div class="share-row">
+      <input type="text" id="share-link-input" readonly />
+      <button type="button" id="copy-link-btn">העתק קישור לשיתוף</button>
+    </div>
+
+    <div class="notify-row">
+      <label style="display:flex; align-items:center; gap:.4rem; flex:1;">
+        התראת מייל בכל הגשה:
+        <input type="email" id="notify-email-input" />
+      </label>
+      <button type="button" id="save-notify-btn">שמירה</button>
+    </div>
+
+    <div class="editor-layout">
+      <div class="toolbar">
+        <button type="button" class="tool-btn" data-type="text">+ טקסט</button>
+        <button type="button" class="tool-btn" data-type="number">+ מספר</button>
+        <button type="button" class="tool-btn" data-type="date">+ תאריך</button>
+        <button type="button" class="tool-btn" data-type="checkbox">+ תיבת סימון</button>
+        <button type="button" class="tool-btn" data-type="signature">+ חתימה</button>
+        <button type="button" id="save-fields-btn">שמירת שדות</button>
+        <div id="editor-hint">
+          בחרו סוג שדה מהתפריט, ואז גררו מלבן על גבי המסמך כדי למקם אותו במקום הרצוי (לחיצה בודדת תמקם שדה בגודל ברירת מחדל). ניתן לגרור שדה קיים באמצעות הידית ⠿, ולשנות את גודלו מהפינה.
+        </div>
+      </div>
+      <div id="editor-pages"></div>
+    </div>
+  </section>
+
+  <section id="view-submissions" class="view">
+    <button type="button" id="back-to-templates-btn-2" class="secondary">← חזרה לרשימת התבניות</button>
+    <h2 id="submissions-title"></h2>
+    <div id="submissions-list"></div>
+  </section>
+
+</main>
+
+<script src="js/firebase-init.js"></script>
+<script src="js/pdf-field-utils.js"></script>
+<script>
+let db, auth, currentUser = null;
+
+const editorState = {
+  template: null,
+  fields: [],
+  pdfDocJs: null,
+  pageBoxSizes: {},
+  activeToolType: null
+};
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
+  document.getElementById('view-' + name).style.display = 'block';
+  document.getElementById('user-bar').style.display = (name === 'login' || name === 'unauthorized') ? 'none' : 'flex';
+}
+
+// ─── התחברות ─────────────────────────────────────────────
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errorEl = document.getElementById('login-error');
+  errorEl.textContent = '';
+  try {
+    await auth.signInWithEmailAndPassword(email, password);
+  } catch (err) {
+    errorEl.textContent = 'שגיאת התחברות: ' + err.message;
+  }
+});
+document.getElementById('logout-btn').addEventListener('click', () => auth.signOut());
+
+// ─── רשימת תבניות ────────────────────────────────────────
+async function loadTemplatesList() {
+  const list = document.getElementById('templates-list');
+  list.innerHTML = '<p>טוען...</p>';
+  const snap = await db.collection('templates').get();
+  const templates = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+  templates.sort((a, b) => (b.createdAt ? b.createdAt.toMillis() : 0) - (a.createdAt ? a.createdAt.toMillis() : 0));
+  renderTemplatesList(templates);
+}
+
+function renderTemplatesList(templates) {
+  const list = document.getElementById('templates-list');
+  if (!templates.length) { list.innerHTML = '<p>אין תבניות עדיין. העלו קובץ PDF כדי להתחיל.</p>'; return; }
+  list.innerHTML = '';
+  templates.forEach(t => {
+    const row = document.createElement('div');
+    row.className = 'template-row';
+    row.innerHTML =
+      '<div class="t-main">' +
+        '<strong>' + escapeHtml(t.name) + '</strong>' +
+        '<span class="t-meta">' + (t.pageCount || 0) + ' עמודים · ' + (t.fields ? t.fields.length : 0) + ' שדות</span>' +
+      '</div>' +
+      '<label class="t-active"><input type="checkbox" class="t-active-toggle" ' + (t.active !== false ? 'checked' : '') + ' /> קישור פעיל</label>' +
+      '<div class="t-actions">' +
+        '<button type="button" class="t-edit">עריכת שדות</button>' +
+        '<button type="button" class="t-submissions secondary">הגשות</button>' +
+        '<button type="button" class="t-link secondary">קישור לשיתוף</button>' +
+        '<button type="button" class="t-delete danger">מחיקה</button>' +
+      '</div>';
+    row.querySelector('.t-edit').addEventListener('click', () => openTemplateEditor(t.id));
+    row.querySelector('.t-submissions').addEventListener('click', () => openSubmissionsView(t.id, t.name));
+    row.querySelector('.t-link').addEventListener('click', () => {
+      const link = buildShareLink(t.id);
+      navigator.clipboard.writeText(link).then(() => alert('הקישור הועתק:\n' + link)).catch(() => alert(link));
+    });
+    row.querySelector('.t-delete').addEventListener('click', () => deleteTemplate(t.id));
+    row.querySelector('.t-active-toggle').addEventListener('change', (e) => {
+      db.collection('templates').doc(t.id).update({ active: e.target.checked });
+    });
+    list.appendChild(row);
+  });
+}
+
+document.getElementById('upload-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = document.getElementById('upload-name').value.trim();
+  const file = document.getElementById('upload-file').files[0];
+  const errorEl = document.getElementById('upload-error');
+  errorEl.textContent = '';
+  if (!name || !file) return;
+  if (file.size > MAX_PDF_BYTES) { errorEl.textContent = 'הקובץ גדול מדי (מקסימום כ-' + Math.round(MAX_PDF_BYTES / 1024) + 'KB). נסו לדחוס את ה-PDF.'; return; }
+  try {
+    await createTemplate(file, name);
+    e.target.reset();
+  } catch (err) {
+    errorEl.textContent = 'שגיאה ביצירת התבנית: ' + err.message;
+  }
+});
+
+async function createTemplate(file, name) {
+  const templateId = db.collection('templates').doc().id;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  // מקודדים ל-Base64 לפני שמעבירים ל-pdf.js, כי pdf.js עלול "לרוקן" את המאגר
+  const pdfBase64 = uint8ToBase64(bytes);
+  const pdfDocJs = await loadPdfDocument(bytes);
+  const pageCount = pdfDocJs.numPages;
+
+  await db.collection('templates').doc(templateId).set({
+    id: templateId,
+    name: name,
+    notifyEmail: currentUser.email,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    active: true,
+    pageCount: pageCount,
+    pdfBase64: pdfBase64,
+    fields: []
+  });
+
+  await loadTemplatesList();
+  openTemplateEditor(templateId);
+}
+
+async function deleteTemplate(templateId) {
+  if (!confirm('למחוק את התבנית? קישור ההגשה שלה יפסיק לעבוד. הגשות קודמות לא יימחקו.')) return;
+  try {
+    await db.collection('templates').doc(templateId).delete();
+    await loadTemplatesList();
+  } catch (err) {
+    alert('שגיאה במחיקה: ' + err.message);
+  }
+}
+
+function buildShareLink(templateId) {
+  const url = new URL('fill.html', location.href);
+  url.searchParams.set('id', templateId);
+  return url.toString();
+}
+
+// ─── עורך השדות ──────────────────────────────────────────
+async function openTemplateEditor(templateId) {
+  const doc = await db.collection('templates').doc(templateId).get();
+  if (!doc.exists) { alert('התבנית לא נמצאה'); return; }
+
+  editorState.template = Object.assign({ id: doc.id }, doc.data());
+  editorState.fields = (editorState.template.fields || []).map(f => Object.assign({}, f));
+  editorState.pageBoxSizes = {};
+  editorState.activeToolType = null;
+
+  showView('editor');
+  document.getElementById('editor-title').textContent = editorState.template.name;
+  document.getElementById('editor-pages').innerHTML = '';
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+
+  document.getElementById('share-link-input').value = buildShareLink(templateId);
+  document.getElementById('notify-email-input').value = editorState.template.notifyEmail || ADMIN_EMAIL;
+
+  editorState.pdfDocJs = await loadPdfDocument(base64ToUint8Array(editorState.template.pdfBase64));
+
+  for (let i = 0; i < editorState.template.pageCount; i++) {
+    await renderEditorPage(i);
+  }
+}
+
+async function renderEditorPage(pageIndex) {
+  const page = await editorState.pdfDocJs.getPage(pageIndex + 1);
+  const container = document.getElementById('editor-pages');
+
+  let wrapper = document.getElementById('page-wrap-' + pageIndex);
+  if (!wrapper) {
+    wrapper = document.createElement('div');
+    wrapper.className = 'page-wrapper';
+    wrapper.id = 'page-wrap-' + pageIndex;
+    const canvas = document.createElement('canvas');
+    wrapper.appendChild(canvas);
+    container.appendChild(wrapper);
+    wrapper.addEventListener('pointerdown', (e) => onPageWrapperPointerDown(e, pageIndex, wrapper));
+  }
+
+  const canvas = wrapper.querySelector('canvas');
+  const cssWidth = Math.min(container.clientWidth || 900, 900);
+  const boxSize = await renderPdfPageToCanvas(page, canvas, cssWidth);
+  wrapper.style.width = boxSize.cssWidth + 'px';
+  wrapper.style.height = boxSize.cssHeight + 'px';
+  editorState.pageBoxSizes[pageIndex] = boxSize;
+  renderFieldsForPage(pageIndex);
+}
+
+function renderFieldsForPage(pageIndex) {
+  const wrapper = document.getElementById('page-wrap-' + pageIndex);
+  if (!wrapper) return;
+  wrapper.querySelectorAll('.field-box').forEach(el => el.remove());
+  const boxSize = editorState.pageBoxSizes[pageIndex];
+  if (!boxSize) return;
+  editorState.fields.filter(f => f.page === pageIndex).forEach(field => {
+    wrapper.appendChild(createEditableFieldBox(field, boxSize));
+  });
+}
+
+function createEditableFieldBox(field, boxSize) {
+  const el = document.createElement('div');
+  el.className = 'field-box type-' + field.type;
+  el.dataset.id = field.id;
+  applyRectPx(el, pctRectToPx(field, boxSize.cssWidth, boxSize.cssHeight));
+
+  const header = document.createElement('div');
+  header.className = 'field-header';
+
+  const handle = document.createElement('span');
+  handle.className = 'drag-handle';
+  handle.textContent = '⠿';
+  handle.addEventListener('pointerdown', (e) => startFieldDrag(e, field.id));
+
+  const labelInput = document.createElement('input');
+  labelInput.type = 'text';
+  labelInput.className = 'field-label-input';
+  labelInput.value = field.label;
+  labelInput.addEventListener('pointerdown', (e) => e.stopPropagation());
+  labelInput.addEventListener('input', (e) => { field.label = e.target.value; });
+
+  const reqLabel = document.createElement('label');
+  reqLabel.className = 'field-required';
+  const reqCheckbox = document.createElement('input');
+  reqCheckbox.type = 'checkbox';
+  reqCheckbox.checked = !!field.required;
+  reqCheckbox.addEventListener('pointerdown', (e) => e.stopPropagation());
+  reqCheckbox.addEventListener('change', (e) => { field.required = e.target.checked; });
+  reqLabel.appendChild(reqCheckbox);
+  reqLabel.appendChild(document.createTextNode('חובה'));
+
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.className = 'field-delete';
+  delBtn.textContent = '×';
+  delBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+  delBtn.addEventListener('click', () => deleteField(field.id));
+
+  header.appendChild(handle);
+  header.appendChild(labelInput);
+  header.appendChild(reqLabel);
+  header.appendChild(delBtn);
+
+  const body = document.createElement('div');
+  body.className = 'field-body';
+  body.textContent = FIELD_TYPE_LABELS[field.type] || field.type;
+
+  const resizeHandle = document.createElement('div');
+  resizeHandle.className = 'resize-handle';
+  resizeHandle.addEventListener('pointerdown', (e) => startFieldResize(e, field.id));
+
+  el.appendChild(header);
+  el.appendChild(body);
+  el.appendChild(resizeHandle);
+  return el;
+}
+
+function deleteField(fieldId) {
+  const field = editorState.fields.find(f => f.id === fieldId);
+  if (!field) return;
+  editorState.fields = editorState.fields.filter(f => f.id !== fieldId);
+  renderFieldsForPage(field.page);
+}
+
+// גרירת שדה קיים
+let dragState = null;
+function startFieldDrag(e, fieldId) {
+  e.stopPropagation(); e.preventDefault();
+  const field = editorState.fields.find(f => f.id === fieldId);
+  const boxSize = editorState.pageBoxSizes[field.page];
+  dragState = { fieldId, startClientX: e.clientX, startClientY: e.clientY, startXPct: field.xPct, startYPct: field.yPct, boxSize };
+  window.addEventListener('pointermove', onFieldDrag);
+  window.addEventListener('pointerup', endFieldDrag);
+}
+function onFieldDrag(e) {
+  if (!dragState) return;
+  const field = editorState.fields.find(f => f.id === dragState.fieldId);
+  const dxPct = (e.clientX - dragState.startClientX) / dragState.boxSize.cssWidth;
+  const dyPct = (e.clientY - dragState.startClientY) / dragState.boxSize.cssHeight;
+  field.xPct = clamp(dragState.startXPct + dxPct, 0, 1 - field.wPct);
+  field.yPct = clamp(dragState.startYPct + dyPct, 0, 1 - field.hPct);
+  const el = document.querySelector('.field-box[data-id="' + field.id + '"]');
+  if (el) applyRectPx(el, pctRectToPx(field, dragState.boxSize.cssWidth, dragState.boxSize.cssHeight));
+}
+function endFieldDrag() {
+  dragState = null;
+  window.removeEventListener('pointermove', onFieldDrag);
+  window.removeEventListener('pointerup', endFieldDrag);
+}
+
+// שינוי גודל שדה קיים
+let resizeState = null;
+function startFieldResize(e, fieldId) {
+  e.stopPropagation(); e.preventDefault();
+  const field = editorState.fields.find(f => f.id === fieldId);
+  const boxSize = editorState.pageBoxSizes[field.page];
+  resizeState = { fieldId, startClientX: e.clientX, startClientY: e.clientY, startWPct: field.wPct, startHPct: field.hPct, boxSize };
+  window.addEventListener('pointermove', onFieldResize);
+  window.addEventListener('pointerup', endFieldResize);
+}
+function onFieldResize(e) {
+  if (!resizeState) return;
+  const field = editorState.fields.find(f => f.id === resizeState.fieldId);
+  const dwPct = (e.clientX - resizeState.startClientX) / resizeState.boxSize.cssWidth;
+  const dhPct = (e.clientY - resizeState.startClientY) / resizeState.boxSize.cssHeight;
+  const minWPct = 30 / resizeState.boxSize.cssWidth;
+  const minHPct = 18 / resizeState.boxSize.cssHeight;
+  field.wPct = clamp(resizeState.startWPct + dwPct, minWPct, 1 - field.xPct);
+  field.hPct = clamp(resizeState.startHPct + dhPct, minHPct, 1 - field.yPct);
+  const el = document.querySelector('.field-box[data-id="' + field.id + '"]');
+  if (el) applyRectPx(el, pctRectToPx(field, resizeState.boxSize.cssWidth, resizeState.boxSize.cssHeight));
+}
+function endFieldResize() {
+  resizeState = null;
+  window.removeEventListener('pointermove', onFieldResize);
+  window.removeEventListener('pointerup', endFieldResize);
+}
+
+// יצירת שדה חדש ע"י גרירת מלבן על העמוד
+let drawState = null;
+function onPageWrapperPointerDown(e, pageIndex, wrapper) {
+  if (!editorState.activeToolType) return;
+  if (e.target !== wrapper && e.target.tagName !== 'CANVAS') return;
+  e.preventDefault();
+  const rect = wrapper.getBoundingClientRect();
+  const draft = document.createElement('div');
+  draft.className = 'draft-rect';
+  wrapper.appendChild(draft);
+  drawState = { pageIndex, wrapper, startX: e.clientX - rect.left, startY: e.clientY - rect.top, draftEl: draft };
+  window.addEventListener('pointermove', onDrawMove);
+  window.addEventListener('pointerup', onDrawEnd);
+}
+function onDrawMove(e) {
+  if (!drawState) return;
+  const rect = drawState.wrapper.getBoundingClientRect();
+  const curX = e.clientX - rect.left, curY = e.clientY - rect.top;
+  const left = Math.min(drawState.startX, curX), top = Math.min(drawState.startY, curY);
+  drawState.draftEl.style.left = left + 'px';
+  drawState.draftEl.style.top = top + 'px';
+  drawState.draftEl.style.width = Math.abs(curX - drawState.startX) + 'px';
+  drawState.draftEl.style.height = Math.abs(curY - drawState.startY) + 'px';
+}
+function onDrawEnd(e) {
+  if (!drawState) return;
+  const rect = drawState.wrapper.getBoundingClientRect();
+  const curX = e.clientX - rect.left, curY = e.clientY - rect.top;
+  let left = Math.min(drawState.startX, curX), top = Math.min(drawState.startY, curY);
+  let width = Math.abs(curX - drawState.startX), height = Math.abs(curY - drawState.startY);
+
+  const defaults = { text: [160, 30], number: [100, 30], date: [120, 30], checkbox: [24, 24], signature: [180, 60] };
+  if (width < 10 || height < 10) { [width, height] = defaults[editorState.activeToolType]; }
+
+  const boxSize = editorState.pageBoxSizes[drawState.pageIndex];
+  left = clamp(left, 0, boxSize.cssWidth - width);
+  top = clamp(top, 0, boxSize.cssHeight - height);
+
+  const pct = pxRectToPct({ leftPx: left, topPx: top, widthPx: width, heightPx: height }, boxSize.cssWidth, boxSize.cssHeight);
+  const type = editorState.activeToolType;
+  const field = {
+    id: newId(), type: type, page: drawState.pageIndex,
+    xPct: pct.xPct, yPct: pct.yPct, wPct: pct.wPct, hPct: pct.hPct,
+    label: FIELD_TYPE_LABELS[type] + ' ' + (editorState.fields.length + 1),
+    fontSize: 12, required: type === 'signature'
+  };
+  editorState.fields.push(field);
+
+  drawState.draftEl.remove();
+  drawState = null;
+  window.removeEventListener('pointermove', onDrawMove);
+  window.removeEventListener('pointerup', onDrawEnd);
+
+  setActiveTool(null);
+  renderFieldsForPage(field.page);
+}
+
+function setActiveTool(type) {
+  editorState.activeToolType = type;
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.type === type));
+}
+document.querySelectorAll('.tool-btn').forEach(btn => {
+  btn.addEventListener('click', () => setActiveTool(btn.dataset.type === editorState.activeToolType ? null : btn.dataset.type));
+});
+
+document.getElementById('save-fields-btn').addEventListener('click', async () => {
+  try {
+    await db.collection('templates').doc(editorState.template.id).update({
+      fields: editorState.fields,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    alert('השדות נשמרו בהצלחה');
+  } catch (err) {
+    alert('שגיאה בשמירה: ' + err.message);
+  }
+});
+
+document.getElementById('copy-link-btn').addEventListener('click', () => {
+  const input = document.getElementById('share-link-input');
+  input.select();
+  navigator.clipboard.writeText(input.value).catch(() => {});
+  alert('הקישור הועתק');
+});
+
+document.getElementById('save-notify-btn').addEventListener('click', async () => {
+  const email = document.getElementById('notify-email-input').value.trim();
+  if (!email) return;
+  await db.collection('templates').doc(editorState.template.id).update({ notifyEmail: email });
+  editorState.template.notifyEmail = email;
+  alert('כתובת המייל עודכנה');
+});
+
+document.getElementById('back-to-templates-btn').addEventListener('click', () => { showView('templates'); loadTemplatesList(); });
+document.getElementById('back-to-templates-btn-2').addEventListener('click', () => { showView('templates'); loadTemplatesList(); });
+
+// ─── הגשות ───────────────────────────────────────────────
+async function openSubmissionsView(templateId, templateName) {
+  showView('submissions');
+  document.getElementById('submissions-title').textContent = 'הגשות: ' + templateName;
+  const list = document.getElementById('submissions-list');
+  list.innerHTML = '<p>טוען...</p>';
+  const snap = await db.collection('submissions').where('templateId', '==', templateId).get();
+  const submissions = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+  submissions.sort((a, b) => (b.createdAt ? b.createdAt.toMillis() : 0) - (a.createdAt ? a.createdAt.toMillis() : 0));
+  renderSubmissionsList(submissions);
+}
+
+function renderSubmissionsList(submissions) {
+  const list = document.getElementById('submissions-list');
+  if (!submissions.length) { list.innerHTML = '<p>אין הגשות עדיין.</p>'; return; }
+  list.innerHTML = '';
+  submissions.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'submission-row';
+    const date = s.createdAt ? s.createdAt.toDate().toLocaleString('he-IL') : '—';
+    row.innerHTML =
+      '<span class="sub-name">' + escapeHtml(s.filledBy || '—') + '</span>' +
+      '<span class="sub-date">' + escapeHtml(date) + '</span>' +
+      (s.pdfBase64
+        ? '<button type="button" class="sub-download secondary">הורדה</button>'
+        : '<span class="sub-date">לא נשמר עותק במערכת (נשלח למייל בלבד)</span>') +
+      '<button type="button" class="sub-delete danger">מחיקה</button>';
+    if (s.pdfBase64) {
+      row.querySelector('.sub-download').addEventListener('click', () => downloadSubmissionPdf(s));
+    }
+    row.querySelector('.sub-delete').addEventListener('click', () => deleteSubmission(s, submissions));
+    list.appendChild(row);
+  });
+}
+
+function downloadSubmissionPdf(submission) {
+  const bytes = base64ToUint8Array(submission.pdfBase64);
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (submission.templateName || 'document') + ' - ' + (submission.filledBy || '') + '.pdf';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+async function deleteSubmission(submission, currentList) {
+  if (!confirm('למחוק את ההגשה?')) return;
+  await db.collection('submissions').doc(submission.id).delete();
+  renderSubmissionsList(currentList.filter(s => s.id !== submission.id));
+}
+
+// ─── אתחול ───────────────────────────────────────────────
+async function init() {
+  await loadScripts(FIREBASE_SDK_URLS);
+  const services = await fbInit();
+  db = services.db; auth = services.auth;
+
+  await loadPdfJs();
+
+  auth.onAuthStateChanged(async (user) => {
+    if (!user) { showView('login'); return; }
+    if (user.email !== ADMIN_EMAIL) { await auth.signOut(); showView('unauthorized'); return; }
+    currentUser = user;
+    document.getElementById('current-user-email').textContent = user.email;
+    showView('templates');
+    loadTemplatesList();
+  });
+}
+
+init().catch(err => {
+  document.body.innerHTML = '<div style="padding:2rem">שגיאה בטעינת האפליקציה: ' + escapeHtml(err.message) + '</div>';
+});
+</script>
+</body>
+</html>
