@@ -100,7 +100,7 @@
   }
 
   .field-box {
-    position: absolute; border: 2px solid var(--field-text); background: rgba(37,99,235,.12);
+    position: absolute; border: 1px solid var(--field-text); background: rgba(37,99,235,.12);
     display: flex; flex-direction: column; overflow: visible;
   }
   .field-box.type-number { border-color: var(--field-number); background: rgba(8,145,178,.12); }
@@ -110,13 +110,12 @@
 
   .field-header {
     display: flex; align-items: center; gap: 2px; background: rgba(255,255,255,.95);
-    font-size: 10px; padding: 1px 2px; white-space: nowrap;
+    font-size: 9px; padding: 1px 2px; white-space: nowrap; height: 100%;
   }
   .drag-handle { cursor: move; padding: 0 2px; }
-  .field-label-input { flex: 1; min-width: 20px; border: none; background: transparent; font-size: 10px; padding: 0; }
-  .field-required { display: flex; align-items: center; gap: 1px; font-size: 9px; }
-  .field-delete { background: transparent; color: var(--danger); border: none; padding: 0 3px; font-size: 13px; line-height: 1; cursor: pointer; }
-  .field-body { flex: 1; font-size: 10px; color: var(--text-muted); padding: 1px 3px; pointer-events: none; }
+  .field-label-input { flex: 1; min-width: 16px; border: none; background: transparent; font-size: 9px; padding: 0; }
+  .field-required { display: flex; align-items: center; gap: 1px; font-size: 8px; }
+  .field-delete { background: transparent; color: var(--danger); border: none; padding: 0 2px; font-size: 12px; line-height: 1; cursor: pointer; }
   .resize-handle {
     position: absolute; width: 12px; height: 12px; right: -2px; bottom: -2px;
     background: #333; cursor: nwse-resize; border-radius: 2px;
@@ -460,16 +459,11 @@ function createEditableFieldBox(field, boxSize) {
   header.appendChild(reqLabel);
   header.appendChild(delBtn);
 
-  const body = document.createElement('div');
-  body.className = 'field-body';
-  body.textContent = FIELD_TYPE_LABELS[field.type] || field.type;
-
   const resizeHandle = document.createElement('div');
   resizeHandle.className = 'resize-handle';
   resizeHandle.addEventListener('pointerdown', (e) => startFieldResize(e, field.id));
 
   el.appendChild(header);
-  el.appendChild(body);
   el.appendChild(resizeHandle);
   return el;
 }
@@ -523,7 +517,7 @@ function onFieldResize(e) {
   const dwPct = (e.clientX - resizeState.startClientX) / resizeState.boxSize.cssWidth;
   const dhPct = (e.clientY - resizeState.startClientY) / resizeState.boxSize.cssHeight;
   const minWPct = 30 / resizeState.boxSize.cssWidth;
-  const minHPct = 18 / resizeState.boxSize.cssHeight;
+  const minHPct = 16 / resizeState.boxSize.cssHeight;
   field.wPct = clamp(resizeState.startWPct + dwPct, minWPct, 1 - field.xPct);
   field.hPct = clamp(resizeState.startHPct + dhPct, minHPct, 1 - field.yPct);
   const el = document.querySelector('.field-box[data-id="' + field.id + '"]');
@@ -566,7 +560,7 @@ function onDrawEnd(e) {
   let left = Math.min(drawState.startX, curX), top = Math.min(drawState.startY, curY);
   let width = Math.abs(curX - drawState.startX), height = Math.abs(curY - drawState.startY);
 
-  const defaults = { text: [160, 30], number: [100, 30], date: [120, 30], checkbox: [24, 24], signature: [180, 60] };
+  const defaults = { text: [140, 22], number: [90, 22], date: [110, 22], checkbox: [24, 24], signature: [180, 60] };
   if (width < 10 || height < 10) { [width, height] = defaults[editorState.activeToolType]; }
 
   const boxSize = editorState.pageBoxSizes[drawState.pageIndex];
