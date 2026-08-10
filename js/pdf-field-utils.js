@@ -38,13 +38,24 @@ function newId() {
   return (crypto.randomUUID) ? crypto.randomUUID() : ('id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
 }
 
-// ─── קבצי PDF נשמרים כ-Base64 בתוך מסמכי Firestore (אין Firebase Storage) ──
-// מגבלת מסמך ב-Firestore היא 1MB; קידוד Base64 מוסיף כ-33% נפח, ולחתימות/טקסט
-// שמוטבעים בסוף יש תוספת נוספת - לכן קובץ המקור מוגבל ל-500KB בערך.
-const MAX_PDF_BYTES = 500 * 1024;
-// חייב להישאר נמוך מהסף האמיתי ב-firestore.rules (pdfFieldOk: 750,000) - אחרת
-// מסמך יכול לעבור את הבדיקה הזו בצד הלקוח ועדיין להידחות בשרת.
+// ─── קבצי PDF: תבניות/הגשות חדשות נשמרות ב-Firebase Storage (עד 3MB לקובץ).
+// תבניות/הגשות ישנות שנשמרו לפני זה כ-Base64 בתוך Firestore ממשיכות לעבוד
+// בדיוק כמו קודם, בלי מיגרציה - ראו getPdfBytes() למטה. ────────────────────
+const MAX_PDF_BYTES = 3 * 1024 * 1024;
+// עדיין רלוונטי רק לנתיב הישן (Base64-in-Firestore): מגבלת מסמך ב-Firestore
+// היא 1MB, וזה חייב להישאר נמוך מהסף האמיתי ב-firestore.rules (pdfFieldOk:
+// 750,000) - אחרת מסמך יכול לעבור בדיקה זו בצד הלקוח ועדיין להידחות בשרת.
 const MAX_PDF_BASE64_BYTES = 730000;
+
+// מחזיר את בייטי ה-PDF בפועל, בלי קשר לאיפה הם שמורים: תבניות/הגשות ישנות
+// (Base64 בתוך Firestore) מפוענחות ישירות; חדשות (Firebase Storage) נשלפות
+// לפי pdfUrl. שימושי גם לרינדור ב-pdf.js וגם להטבעה ב-pdf-lib (flattenPdf).
+async function getPdfBytes(record) {
+  if (record.pdfBase64) return base64ToUint8Array(record.pdfBase64);
+  const res = await fetch(record.pdfUrl);
+  if (!res.ok) throw new Error('שגיאה בטעינת קובץ ה-PDF מהאחסון (' + res.status + ')');
+  return new Uint8Array(await res.arrayBuffer());
+}
 const EMAILJS_MAX_ATTACHMENT_BYTES = 500 * 1024; // מגבלת התוכנית החינמית של EmailJS
 
 function uint8ToBase64(bytes) {

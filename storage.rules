@@ -1,0 +1,34 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'v.carmel@gmail.com';
+    }
+
+    // כתובות ההורדה (getDownloadURL) כוללות טוקן גישה משלהן וניתנות לגישה
+    // בלי קשר לחוקים כאן - הגבלת ה-read למטה היא הגנת עומק בלבד (חוסמת ניחוש
+    // ישיר של נתיבים); הגבול האמיתי על מי יכול *לדעת* את הכתובת הוא כללי
+    // ה-get/list ב-firestore.rules על מסמכי templates/submissions עצמם.
+    match /templates/{templateId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 3145728
+        && request.resource.contentType == 'application/pdf'
+        && (resource == null || isAdmin() || resource.metadata.ownerId == request.auth.uid)
+        && (isAdmin() || request.resource.metadata.ownerId == request.auth.uid);
+      allow delete: if isAdmin() || (resource != null && resource.metadata.ownerId == request.auth.uid);
+    }
+
+    // הכתיבה כאן נעשית ע"י חותם/ממלא אנונימי (לא הבעלים) - אי אפשר לדרוש
+    // ownerId כמו בתבניות; גם "נסה שוב להשלים" (מנהל/משתמש) כותב לאותו נתיב
+    // מאוחר יותר. המחיקה כן מוגבלת לבעלים האמיתי דרך חיפוש ב-Firestore.
+    match /submissions/{submissionId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 3145728
+        && request.resource.contentType == 'application/pdf';
+      allow delete: if isAdmin()
+        || firestore.get(/databases/(default)/documents/submissions/$(submissionId)).data.ownerId == request.auth.uid;
+    }
+  }
+}

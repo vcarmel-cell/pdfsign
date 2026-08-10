@@ -111,7 +111,7 @@
 <script src="js/firebase-init.js"></script>
 <script src="js/pdf-field-utils.js"></script>
 <script>
-let db, auth;
+let db, auth, storage;
 let template = null;
 let templateId = null;
 let fillerName = '';
@@ -132,7 +132,7 @@ function showView(name) {
 
 // ─── רינדור המסמך ומיקום שדות אינטראקטיביים ──────────────
 async function renderFillDocument() {
-  pdfDocJs = await loadPdfDocument(base64ToUint8Array(template.pdfBase64));
+  pdfDocJs = await loadPdfDocument(await getPdfBytes(template));
   const container = document.getElementById('fill-pages');
   container.innerHTML = '';
   fieldRuntime = {};
@@ -287,7 +287,19 @@ async function submitSingleMode() {
   showView('submitting');
 
   try {
-    const originalBytes = base64ToUint8Array(template.pdfBase64);
+    // מכסת 99 הגשות - רלוונטית רק לבעלים שהם משתמשים רגילים (יש להם מסמך
+    // users/{uid}); למנהל-העל אין מסמך כזה ולכן אין הגבלה.
+    let ownerSnap = null;
+    if (template.ownerId) {
+      ownerSnap = await db.collection('users').doc(template.ownerId).get();
+      if (ownerSnap.exists && (ownerSnap.data().submissionCount || 0) >= 99) {
+        showView('fill');
+        errorEl.textContent = 'לא ניתן לקבל כרגע הגשות נוספות עבור טופס זה. אנא פנו לגורם ששלח לכם את הקישור.';
+        return;
+      }
+    }
+
+    const originalBytes = await getPdfBytes(template);
     const values = {};
     const flattenedBytes = await flattenPdf(originalBytes, template.fields || [], (field) => {
       const rt = fieldRuntime[field.id];
@@ -298,10 +310,6 @@ async function submitSingleMode() {
     });
 
     flattenedBytesCache = flattenedBytes;
-    const pdfBase64 = uint8ToBase64(flattenedBytes);
-    // אין Firebase Storage - הקובץ נשמר כ-Base64 בתוך מסמך Firestore עצמו,
-    // ולכן חייב להישאר קטן מספיק כדי לא לחרוג ממגבלת 1MB למסמך.
-    const savedInSystem = pdfBase64.length <= MAX_PDF_BASE64_BYTES;
     const emailAttachmentOk = flattenedBytes.length <= EMAILJS_MAX_ATTACHMENT_BYTES;
 
     const submissionId = db.collection('submissions').doc().id;
@@ -316,11 +324,38 @@ async function submitSingleMode() {
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       values: values
     };
-    if (savedInSystem) submissionDoc.pdfBase64 = pdfBase64;
+
+    let pdfBase64 = null;
+    let pdfUrl = null;
+    let savedInSystem;
+    if (template.pdfBase64) {
+      // תבנית ישנה (Base64-in-Firestore) - שומרים באותה שיטה בדיוק.
+      pdfBase64 = uint8ToBase64(flattenedBytes);
+      savedInSystem = pdfBase64.length <= MAX_PDF_BASE64_BYTES;
+      if (savedInSystem) submissionDoc.pdfBase64 = pdfBase64;
+    } else {
+      // תבנית חדשה (Firebase Storage) - אם המסמך המוטבע חורג מ-3MB, נשמור
+      // בלי עותק במערכת (כמו נפילה למגבלה הישנה) במקום לנסות להעלות ולהיכשל.
+      savedInSystem = flattenedBytes.length <= MAX_PDF_BYTES;
+      if (savedInSystem) {
+        const storagePath = 'submissions/' + submissionId + '/signed.pdf';
+        const blob = new Blob([flattenedBytes], { type: 'application/pdf' });
+        await storage.ref(storagePath).put(blob, { contentType: 'application/pdf' });
+        pdfUrl = await storage.ref(storagePath).getDownloadURL();
+        submissionDoc.pdfUrl = pdfUrl;
+        submissionDoc.pdfStoragePath = storagePath;
+      }
+    }
 
     await db.collection('submissions').doc(submissionId).set(submissionDoc);
 
-    sendEmailNotification(pdfBase64, emailAttachmentOk).catch(err => console.warn('שליחת מייל ההתראה נכשלה (ההגשה עצמה נשמרה בהצלחה):', err));
+    if (ownerSnap && ownerSnap.exists) {
+      db.collection('users').doc(template.ownerId).update({
+        submissionCount: firebase.firestore.FieldValue.increment(1)
+      }).catch(err => console.warn('עדכון מונה ההגשות נכשל:', err));
+    }
+
+    sendEmailNotification(pdfBase64, pdfUrl, emailAttachmentOk).catch(err => console.warn('שליחת מייל ההתראה נכשלה (ההגשה עצמה נשמרה בהצלחה):', err));
 
     showSuccessScreen({ title: 'הטופס נשלח בהצלחה', status: 'עותק חתום נשמר במערכת.', bytes: flattenedBytes, savedInSystem });
   } catch (err) {
@@ -383,7 +418,7 @@ async function submitMultiSignMode() {
     });
 
     if (completionResult) {
-      const originalBytes = base64ToUint8Array(template.pdfBase64);
+      const originalBytes = await getPdfBytes(template);
       const flattenedBytes = await flattenPdf(originalBytes, template.fields || [], (field) => {
         if (field.type === 'signature') {
           const raw = completionResult.rawSignatures[field.id];
@@ -396,8 +431,6 @@ async function submitMultiSignMode() {
       });
 
       flattenedBytesCache = flattenedBytes;
-      const pdfBase64 = uint8ToBase64(flattenedBytes);
-      const savedInSystem = pdfBase64.length <= MAX_PDF_BASE64_BYTES;
       const emailAttachmentOk = flattenedBytes.length <= EMAILJS_MAX_ATTACHMENT_BYTES;
 
       const finalUpdate = {
@@ -405,10 +438,28 @@ async function submitMultiSignMode() {
         completedAt: firebase.firestore.FieldValue.serverTimestamp(),
         rawSignatures: firebase.firestore.FieldValue.delete()
       };
-      if (savedInSystem) finalUpdate.pdfBase64 = pdfBase64;
+
+      let pdfBase64 = null;
+      let pdfUrl = null;
+      let savedInSystem;
+      if (template.pdfBase64) {
+        pdfBase64 = uint8ToBase64(flattenedBytes);
+        savedInSystem = pdfBase64.length <= MAX_PDF_BASE64_BYTES;
+        if (savedInSystem) finalUpdate.pdfBase64 = pdfBase64;
+      } else {
+        savedInSystem = flattenedBytes.length <= MAX_PDF_BYTES;
+        if (savedInSystem) {
+          const storagePath = 'submissions/' + multiSign.submissionId + '/signed.pdf';
+          const blob = new Blob([flattenedBytes], { type: 'application/pdf' });
+          await storage.ref(storagePath).put(blob, { contentType: 'application/pdf' });
+          pdfUrl = await storage.ref(storagePath).getDownloadURL();
+          finalUpdate.pdfUrl = pdfUrl;
+          finalUpdate.pdfStoragePath = storagePath;
+        }
+      }
       await submissionRef.update(finalUpdate);
 
-      sendEmailNotification(pdfBase64, emailAttachmentOk).catch(err => console.warn('שליחת מייל ההתראה נכשלה:', err));
+      sendEmailNotification(pdfBase64, pdfUrl, emailAttachmentOk).catch(err => console.warn('שליחת מייל ההתראה נכשלה:', err));
 
       showSuccessScreen({ title: 'המסמך הושלם', status: 'כל החתימות נאספו ועותק חתום נשמר במערכת.', bytes: flattenedBytes, savedInSystem });
     } else {
@@ -425,7 +476,7 @@ async function submitMultiSignMode() {
   }
 }
 
-async function sendEmailNotification(pdfBase64, includeAttachment) {
+async function sendEmailNotification(pdfBase64, pdfUrl, includeAttachment) {
   if (!EMAILJS_CONFIG.publicKey || EMAILJS_CONFIG.publicKey.startsWith('PASTE')) return;
   const params = {
     to_email: template.notifyEmail || ADMIN_EMAIL,
@@ -433,8 +484,11 @@ async function sendEmailNotification(pdfBase64, includeAttachment) {
     filler_name: fillerName,
     submitted_at: new Date().toLocaleString('he-IL')
   };
-  if (includeAttachment) {
+  if (includeAttachment && pdfBase64) {
     params.pdf_attachment = 'data:application/pdf;base64,' + pdfBase64;
+  }
+  if (pdfUrl) {
+    params.pdf_link = pdfUrl;
   }
   await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, params);
 }
@@ -485,7 +539,7 @@ async function init() {
 
   await loadScripts(FIREBASE_SDK_URLS);
   const services = await fbInit();
-  db = services.db; auth = services.auth;
+  db = services.db; auth = services.auth; storage = services.storage;
 
   await loadPdfJs();
   await loadScripts([PDF_LIB_SCRIPT_URL, EMAILJS_SCRIPT_URL]);

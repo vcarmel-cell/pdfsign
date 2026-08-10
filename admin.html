@@ -178,7 +178,7 @@
         <input type="file" id="upload-file" accept="application/pdf" required />
         <button type="submit">העלאה ויצירת תבנית</button>
       </form>
-      <p style="font-size:.8rem; color:var(--text-muted); margin:0 0 .4rem 0;">גודל מקסימלי לקובץ: כ-500KB (מתאים לטפסים/חוזים מבוססי-טקסט; מסמכים סרוקים כבדים לא יתקבלו).</p>
+      <p style="font-size:.8rem; color:var(--text-muted); margin:0 0 .4rem 0;">גודל מקסימלי לקובץ: 3MB. משתמשים רגילים מוגבלים ל-10 תבניות; יש למחוק תבנית ישנה כדי להוסיף חדשה מעבר לכך.</p>
       <p class="error" id="upload-error"></p>
     </div>
     <div id="templates-list"></div>
@@ -257,6 +257,7 @@
   <section id="view-submissions" class="view">
     <button type="button" id="back-to-templates-btn-2" class="secondary">← חזרה לרשימת התבניות</button>
     <h2 id="submissions-title"></h2>
+    <button type="button" id="download-all-zip-btn" class="secondary" style="margin-bottom:.6rem;">הורדת כל ההגשות (ZIP)</button>
     <div id="submissions-list"></div>
   </section>
 
@@ -265,7 +266,7 @@
 <script src="js/firebase-init.js"></script>
 <script src="js/pdf-field-utils.js"></script>
 <script>
-let db, auth, currentUser = null;
+let db, auth, storage, currentUser = null;
 let currentRole = null;        // 'admin' | 'user'
 let currentUserProfile = null; // users/{uid} doc data, for regular users only
 let userDocUnsub = null;
@@ -349,6 +350,20 @@ async function migrateTemplatesMissingOwner(templates) {
   }
 }
 
+// אין תמיכה ב-count() בגרסת ה-SDK הזו (compat) - סופרים ע"י שליפת המסמכים
+// עצמם. זול וסביר כאן כי זה תמיד רץ ע"י הבעלים/מנהל (יש להם הרשאת קריאה
+// מלאה ממילא), ותבניות מוגבלות ל-10 למשתמש רגיל.
+async function attachSubmissionCounts(templates) {
+  await Promise.all(templates.map(async (t) => {
+    try {
+      let q = db.collection('submissions').where('templateId', '==', t.id);
+      if (currentRole !== 'admin') q = q.where('ownerId', '==', currentUser.uid);
+      const snap = await q.get();
+      t.submissionCount = snap.size;
+    } catch (err) { t.submissionCount = null; }
+  }));
+}
+
 async function loadTemplatesList() {
   const list = document.getElementById('templates-list');
   list.innerHTML = '<p>טוען...</p>';
@@ -359,6 +374,7 @@ async function loadTemplatesList() {
     const snap = await query.get();
     const templates = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
     if (currentRole === 'admin') await migrateTemplatesMissingOwner(templates);
+    await attachSubmissionCounts(templates);
     templates.sort((a, b) => (b.createdAt ? b.createdAt.toMillis() : 0) - (a.createdAt ? a.createdAt.toMillis() : 0));
     renderTemplatesList(templates);
   } catch (err) {
@@ -376,7 +392,7 @@ function renderTemplatesList(templates) {
     row.innerHTML =
       '<div class="t-main">' +
         '<strong>' + escapeHtml(t.name) + '</strong>' +
-        '<span class="t-meta">' + (t.pageCount || 0) + ' עמודים · ' + (t.fields ? t.fields.length : 0) + ' שדות</span>' +
+        '<span class="t-meta">' + (t.pageCount || 0) + ' עמודים · ' + (t.fields ? t.fields.length : 0) + ' שדות · ' + (t.submissionCount == null ? '—' : t.submissionCount) + ' הגשות</span>' +
         (currentRole === 'admin' && t.ownerEmail ? '<span class="t-owner">בעלים: ' + escapeHtml(t.ownerEmail) + '</span>' : '') +
       '</div>' +
       '<label class="t-active"><input type="checkbox" class="t-active-toggle" ' + (t.active !== false ? 'checked' : '') + ' /> קישור פעיל</label>' +
@@ -392,7 +408,7 @@ function renderTemplatesList(templates) {
       const link = buildShareLink(t.id);
       navigator.clipboard.writeText(link).then(() => alert('הקישור הועתק:\n' + link)).catch(() => alert(link));
     });
-    row.querySelector('.t-delete').addEventListener('click', () => deleteTemplate(t.id));
+    row.querySelector('.t-delete').addEventListener('click', () => deleteTemplate(t.id, t.pdfStoragePath));
     row.querySelector('.t-active-toggle').addEventListener('change', (e) => {
       db.collection('templates').doc(t.id).update({ active: e.target.checked });
     });
@@ -417,12 +433,23 @@ document.getElementById('upload-form').addEventListener('submit', async (e) => {
 });
 
 async function createTemplate(file, name) {
+  if (currentRole === 'user') {
+    const existingSnap = await db.collection('templates').where('ownerId', '==', currentUser.uid).get();
+    if (existingSnap.size >= 10) {
+      throw new Error('הגעת למגבלת 10 תבניות. יש למחוק תבנית ישנה לפני הוספת תבנית חדשה.');
+    }
+  }
+
   const templateId = db.collection('templates').doc().id;
+  // קריאה נפרדת מה-upload עצמו, כי pdf.js עלול "לרוקן" מאגר שמועבר אליו.
   const bytes = new Uint8Array(await file.arrayBuffer());
-  // מקודדים ל-Base64 לפני שמעבירים ל-pdf.js, כי pdf.js עלול "לרוקן" את המאגר
-  const pdfBase64 = uint8ToBase64(bytes);
   const pdfDocJs = await loadPdfDocument(bytes);
   const pageCount = pdfDocJs.numPages;
+
+  const storagePath = 'templates/' + templateId + '/original.pdf';
+  const storageRef = storage.ref(storagePath);
+  await storageRef.put(file, { contentType: 'application/pdf', customMetadata: { ownerId: currentUser.uid } });
+  const pdfUrl = await storageRef.getDownloadURL();
 
   await db.collection('templates').doc(templateId).set({
     id: templateId,
@@ -434,7 +461,8 @@ async function createTemplate(file, name) {
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     active: true,
     pageCount: pageCount,
-    pdfBase64: pdfBase64,
+    pdfUrl: pdfUrl,
+    pdfStoragePath: storagePath,
     fields: []
   });
 
@@ -442,9 +470,10 @@ async function createTemplate(file, name) {
   openTemplateEditor(templateId);
 }
 
-async function deleteTemplate(templateId) {
+async function deleteTemplate(templateId, pdfStoragePath) {
   if (!confirm('למחוק את התבנית? קישור ההגשה שלה יפסיק לעבוד. הגשות קודמות לא יימחקו.')) return;
   try {
+    if (pdfStoragePath) await storage.ref(pdfStoragePath).delete().catch(() => {});
     await db.collection('templates').doc(templateId).delete();
     await loadTemplatesList();
   } catch (err) {
@@ -505,6 +534,15 @@ document.getElementById('multisign-toggle').addEventListener('change', async (e)
 async function startNewSigningRound(template) {
   const sigFields = (template.fields || []).filter(f => f.type === 'signature');
   if (!sigFields.length) { alert('יש להוסיף לפחות שדה חתימה אחד לתבנית ולשמור שדות לפני התחלת סבב.'); return; }
+
+  if (currentRole === 'user') {
+    const count = (currentUserProfile && currentUserProfile.submissionCount) || 0;
+    if (count >= 99) {
+      alert('הגעת למגבלת 99 הגשות. יש למחוק הגשות ישנות כדי להמשיך ולקבל הגשות חדשות.');
+      return;
+    }
+  }
+
   const submissionId = db.collection('submissions').doc().id;
   await db.collection('submissions').doc(submissionId).set({
     id: submissionId,
@@ -516,6 +554,10 @@ async function startNewSigningRound(template) {
     values: {}, signerNames: {}, rawSignatures: {},
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   });
+  if (currentRole === 'user') {
+    await db.collection('users').doc(currentUser.uid).update({ submissionCount: firebase.firestore.FieldValue.increment(1) });
+    currentUserProfile.submissionCount = ((currentUserProfile.submissionCount) || 0) + 1;
+  }
   alert('סבב חתימות חדש נפתח. לחצו "הגשות" כדי לקבל את הקישורים לכל חותם.');
   openSubmissionsView(template);
 }
@@ -549,7 +591,7 @@ async function openTemplateEditor(templateId) {
 
   await refreshModeUi();
 
-  editorState.pdfDocJs = await loadPdfDocument(base64ToUint8Array(editorState.template.pdfBase64));
+  editorState.pdfDocJs = await loadPdfDocument(await getPdfBytes(editorState.template));
 
   for (let i = 0; i < editorState.template.pageCount; i++) {
     await renderEditorPage(i);
@@ -801,6 +843,7 @@ document.getElementById('back-to-templates-btn-2').addEventListener('click', () 
 
 // ─── הגשות ───────────────────────────────────────────────
 let submissionsViewTemplate = null;
+let submissionsViewList = [];
 
 async function openSubmissionsView(template) {
   submissionsViewTemplate = template;
@@ -814,11 +857,43 @@ async function openSubmissionsView(template) {
     const snap = await query.get();
     const submissions = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
     submissions.sort((a, b) => (b.createdAt ? b.createdAt.toMillis() : 0) - (a.createdAt ? a.createdAt.toMillis() : 0));
+    submissionsViewList = submissions;
     renderSubmissionsList(submissions);
   } catch (err) {
+    submissionsViewList = [];
     if (!(await handleFirestoreError(err))) list.innerHTML = '<p class="error">שגיאה בטעינת ההגשות: ' + escapeHtml(err.message) + '</p>';
   }
 }
+
+async function downloadAllSubmissionsZip() {
+  const downloadable = submissionsViewList.filter(s => s.pdfBase64 || s.pdfUrl);
+  if (!downloadable.length) { alert('אין הגשות עם עותק שמור להורדה.'); return; }
+  const btn = document.getElementById('download-all-zip-btn');
+  btn.disabled = true;
+  btn.textContent = 'מכין קובץ ZIP...';
+  try {
+    const zip = new JSZip();
+    for (const s of downloadable) {
+      try {
+        const bytes = await getPdfBytes(s);
+        const label = s.filledBy || Object.values(s.signerNames || {}).join('_') || s.id;
+        zip.file((s.templateName || 'submission') + ' - ' + label + '.pdf', bytes);
+      } catch (err) { console.warn('דילוג על הגשה שנכשלה בהורדה:', s.id, err); }
+    }
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'הגשות.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (err) {
+    alert('שגיאה ביצירת קובץ ה-ZIP: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'הורדת כל ההגשות (ZIP)';
+  }
+}
+document.getElementById('download-all-zip-btn').addEventListener('click', downloadAllSubmissionsZip);
 
 function renderSubmissionsList(submissions) {
   const list = document.getElementById('submissions-list');
@@ -841,11 +916,11 @@ function renderSingleRow(row, s, submissions) {
   row.innerHTML =
     '<span class="sub-name">' + escapeHtml(s.filledBy || '—') + '</span>' +
     '<span class="sub-date">' + escapeHtml(date) + '</span>' +
-    (s.pdfBase64
+    ((s.pdfBase64 || s.pdfUrl)
       ? '<button type="button" class="sub-download secondary">הורדה</button>'
       : '<span class="sub-date">לא נשמר עותק במערכת (נשלח למייל בלבד)</span>') +
     '<button type="button" class="sub-delete danger">מחיקה</button>';
-  if (s.pdfBase64) {
+  if (s.pdfBase64 || s.pdfUrl) {
     row.querySelector('.sub-download').addEventListener('click', () => downloadSubmissionPdf(s));
   }
   row.querySelector('.sub-delete').addEventListener('click', () => deleteSubmission(s, submissions));
@@ -871,7 +946,7 @@ function renderMultiSignRow(row, s, submissions) {
   row.appendChild(wrap);
 
   const actionsEl = wrap.querySelector('.t-actions');
-  if (s.pdfBase64) {
+  if (s.pdfBase64 || s.pdfUrl) {
     const dl = document.createElement('button');
     dl.type = 'button'; dl.className = 'secondary'; dl.textContent = 'הורדה';
     dl.addEventListener('click', () => downloadSubmissionPdf(s));
@@ -916,7 +991,7 @@ async function retryCompletion(submission) {
   try {
     const values = submission.values || {};
     const rawSignatures = submission.rawSignatures || {};
-    const bytes = base64ToUint8Array(submissionsViewTemplate.pdfBase64);
+    const bytes = await getPdfBytes(submissionsViewTemplate);
     const flattenedBytes = await flattenPdf(bytes, submissionsViewTemplate.fields || [], (field) => {
       if (field.type === 'signature') {
         const raw = rawSignatures[field.id];
@@ -927,9 +1002,21 @@ async function retryCompletion(submission) {
       if (val === undefined || val === null || val === '') return null;
       return { kind: 'text', value: val };
     });
-    const pdfBase64 = uint8ToBase64(flattenedBytes);
+
     const update = { status: 'completed', completedAt: firebase.firestore.FieldValue.serverTimestamp(), rawSignatures: firebase.firestore.FieldValue.delete() };
-    if (pdfBase64.length <= MAX_PDF_BASE64_BYTES) update.pdfBase64 = pdfBase64;
+    if (submissionsViewTemplate.pdfBase64) {
+      // תבנית ישנה (Base64-in-Firestore) - שומרים באותה שיטה כמו תמיד.
+      const pdfBase64 = uint8ToBase64(flattenedBytes);
+      if (pdfBase64.length <= MAX_PDF_BASE64_BYTES) update.pdfBase64 = pdfBase64;
+    } else {
+      // תבנית חדשה (Firebase Storage).
+      const storagePath = 'submissions/' + submission.id + '/signed.pdf';
+      const blob = new Blob([flattenedBytes], { type: 'application/pdf' });
+      const storageRef = storage.ref(storagePath);
+      await storageRef.put(blob, { contentType: 'application/pdf' });
+      update.pdfUrl = await storageRef.getDownloadURL();
+      update.pdfStoragePath = storagePath;
+    }
     await db.collection('submissions').doc(submission.id).update(update);
     alert('ההשלמה בוצעה מחדש בהצלחה.');
     openSubmissionsView(submissionsViewTemplate);
@@ -938,8 +1025,10 @@ async function retryCompletion(submission) {
   }
 }
 
-function downloadSubmissionPdf(submission) {
-  const bytes = base64ToUint8Array(submission.pdfBase64);
+async function downloadSubmissionPdf(submission) {
+  // הורדה דרך getPdfBytes ל-Blob מקומי (ולא href ישיר לכתובת Storage) בכוונה -
+  // הדפדפן מתעלם משם הקובץ המבוקש (download=) בכתובות חוצות-מקור.
+  const bytes = await getPdfBytes(submission);
   const blob = new Blob([bytes], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -953,8 +1042,13 @@ function downloadSubmissionPdf(submission) {
 
 async function deleteSubmission(submission, currentList) {
   if (!confirm('למחוק את ההגשה?')) return;
+  if (submission.pdfStoragePath) await storage.ref(submission.pdfStoragePath).delete().catch(() => {});
   await db.collection('submissions').doc(submission.id).delete();
-  renderSubmissionsList(currentList.filter(s => s.id !== submission.id));
+  if (submission.ownerId) {
+    await db.collection('users').doc(submission.ownerId).update({ submissionCount: firebase.firestore.FieldValue.increment(-1) }).catch(() => {});
+  }
+  submissionsViewList = currentList.filter(s => s.id !== submission.id);
+  renderSubmissionsList(submissionsViewList);
 }
 
 // ─── ניהול משתמשים ───────────────────────────────────────
@@ -1051,10 +1145,11 @@ document.getElementById('change-password-form').addEventListener('submit', async
 async function init() {
   await loadScripts(FIREBASE_SDK_URLS);
   const services = await fbInit();
-  db = services.db; auth = services.auth;
+  db = services.db; auth = services.auth; storage = services.storage;
 
   await loadPdfJs();
   await loadScripts([PDF_LIB_SCRIPT_URL]); // ל"נסה שוב להשלים" בהגשות רב-חותמים
+  await loadScripts(['https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js']); // להורדת כל ההגשות כ-ZIP
 
   auth.onAuthStateChanged(async (user) => {
     if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }

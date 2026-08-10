@@ -14,16 +14,19 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true;
     }
-    // אין Firebase Storage באפליקציה הזו - קובצי PDF נשמרים כ-Base64 בתוך
-    // המסמך עצמו, ולכן חייבים להישאר קטנים מספיק כדי לא לחרוג ממגבלת 1MB
-    // למסמך ב-Firestore (ראו MAX_PDF_BYTES/MAX_PDF_BASE64_BYTES ב-js/pdf-field-utils.js -
-    // הם חייבים להישאר נמוכים מהסף כאן).
+    // רלוונטי רק לתבניות/הגשות ישנות (מלפני שהוספנו Firebase Storage) שעדיין
+    // שומרות PDF כ-Base64 בתוך המסמך עצמו - אלה חייבות להישאר קטנות מספיק
+    // כדי לא לחרוג ממגבלת 1MB למסמך ב-Firestore. תבניות/הגשות חדשות נשמרות
+    // ב-Storage (pdfUrl/pdfStoragePath) ולא נוגעות בבדיקה הזו כלל.
     function pdfFieldOk(data) {
       return !('pdfBase64' in data) || data.pdfBase64.size() < 750000;
     }
 
     match /users/{userId} {
-      allow get: if isAdmin() || (signedIn() && request.auth.uid == userId);
+      // get פתוח לכל מחובר (כולל אנונימי) לפי מזהה ידוע - כמו templates.get -
+      // כדי שממלא אנונימי יוכל לבדוק את מכסת ה-99 הגשות של בעל התבנית לפני
+      // שהוא שולח הגשה חדשה (ראו submissionCount למטה).
+      allow get: if signedIn();
       allow list: if isAdmin();
       allow create: if isAdmin()
         && request.resource.data.uid == userId
@@ -32,11 +35,23 @@ service cloud.firestore {
         && request.resource.data.active == true
         && request.resource.data.createdAt == request.time
         && request.resource.data.createdBy == request.auth.uid;
-      allow update: if isAdmin()
+      allow update: if (
+        isAdmin()
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.email == resource.data.email
         && request.resource.data.createdBy == resource.data.createdBy
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && request.resource.data.createdAt == resource.data.createdAt
+      ) || (
+        // עדכון מצומצם של submissionCount בלבד, בדיוק ב-1 - מאפשר גם לבעל
+        // החשבון (במחיקת הגשה) וגם לכל מחובר אחר (ממלא אנונימי, ביצירת
+        // הגשה חדשה) לעדכן את המונה, בלי לגעת בשום שדה אחר במסמך.
+        signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['submissionCount'])
+        && (
+          (request.auth.uid == userId && request.resource.data.submissionCount == resource.data.submissionCount - 1)
+          || request.resource.data.submissionCount == resource.data.submissionCount + 1
+        )
+      );
       allow delete: if isAdmin();
     }
 
@@ -101,7 +116,7 @@ service cloud.firestore {
         let affected = after.diff(before).affectedKeys();
         return signedIn()
           && before.mode == 'multiSign'
-          && affected.hasOnly(['values', 'signerNames', 'rawSignatures', 'status', 'completedAt', 'pdfBase64'])
+          && affected.hasOnly(['values', 'signerNames', 'rawSignatures', 'status', 'completedAt', 'pdfBase64', 'pdfUrl', 'pdfStoragePath'])
           && after.ownerId == before.ownerId && after.templateId == before.templateId && after.mode == before.mode
           && (
             (before.status == 'in_progress' && (after.status == 'in_progress' || after.status == 'completing')

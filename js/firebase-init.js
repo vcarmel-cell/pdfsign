@@ -31,12 +31,14 @@ function loadScripts(urls) {
   });
 }
 
-// אין שימוש ב-Firebase Storage (דורש שדרוג לתוכנית Blaze) - קובצי PDF נשמרים
-// כ-Base64 בתוך מסמכי Firestore עצמם, ראו MAX_PDF_BYTES ב-pdf-field-utils.js.
+// Firebase Storage דורש תוכנית Blaze (בתשלום לפי שימוש) - הפרויקט שודרג
+// כדי לתמוך בקבצים גדולים יותר מ-500KB. תבניות/הגשות ישנות שנשמרו כ-Base64
+// בתוך Firestore (מלפני השדרוג) ממשיכות לעבוד בלי מיגרציה, ראו getPdfBytes().
 const FIREBASE_SDK_URLS = [
   'https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js',
-  'https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js'
+  'https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js',
+  'https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js'
 ];
 
 async function fbInit() {
@@ -44,7 +46,8 @@ async function fbInit() {
   if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
   return {
     db: firebase.firestore(),
-    auth: firebase.auth()
+    auth: firebase.auth(),
+    storage: firebase.storage()
   };
 }
 
