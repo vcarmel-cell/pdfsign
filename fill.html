@@ -287,6 +287,7 @@ document.getElementById('submit-btn').addEventListener('click', async () => {
       id: submissionId,
       templateId: template.id,
       templateName: template.name,
+      ownerId: template.ownerId,
       filledBy: fillerName,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       values: values

@@ -8,6 +8,12 @@ service cloud.firestore {
     function signedIn() {
       return request.auth != null;
     }
+    // משתמש רגיל (לא המנהל הראשי) - מזוהה דרך מסמך users/{uid} פעיל.
+    function isActiveUser() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true;
+    }
     // אין Firebase Storage באפליקציה הזו - קובצי PDF נשמרים כ-Base64 בתוך
     // המסמך עצמו, ולכן חייבים להישאר קטנים מספיק כדי לא לחרוג ממגבלת 1MB
     // למסמך ב-Firestore (ראו MAX_PDF_BYTES ב-js/pdf-field-utils.js).
@@ -15,23 +21,63 @@ service cloud.firestore {
       return !('pdfBase64' in data) || data.pdfBase64.size() < 750000;
     }
 
-    match /templates/{templateId} {
-      // fill.html שולף תבנית לפי מזהה ידוע - get פתוח לכל מחובר (כולל אנונימי)
-      allow get: if signedIn();
-      // list מוגבל למנהל, כדי שלא יהיה אפשר לספור/לגלות את כל המסמכים העסקיים
+    match /users/{userId} {
+      // get פתוח גם למשתמש על המסמך של עצמו (לא רק כש-active==true) - כדי
+      // שה-listener בזמן אמת יקבל את השינוי ל-active:false במקום למות
+      // משגיאת הרשאה לפני שהוא מספיק להגיב אליו (ראו watchOwnUserDoc).
+      allow get: if isAdmin() || (signedIn() && request.auth.uid == userId);
       allow list: if isAdmin();
-      allow create, update: if isAdmin() && pdfFieldOk(request.resource.data);
+      allow create: if isAdmin()
+        && request.resource.data.uid == userId
+        && request.resource.data.email is string
+        && request.resource.data.role == 'user'
+        && request.resource.data.active == true
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.createdBy == request.auth.uid;
+      // uid/email/createdBy/createdAt נעולים לשינוי - רק active/notifyEmail אמורים להתעדכן.
+      allow update: if isAdmin()
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt;
       allow delete: if isAdmin();
     }
 
+    match /templates/{templateId} {
+      // fill.html שולף תבנית לפי מזהה ידוע (לא ניתן לניחוש) - get פתוח לכל
+      // מחובר (כולל אנונימי); זו בדיוק ההגנה - המזהה עצמו, לא ה-rule.
+      allow get: if signedIn();
+      // list מוגבל: המנהל רואה הכול, משתמש רגיל רואה רק לפי שאילתת
+      // where('ownerId','==', uid) - כללי Firestore דורשים שהשאילתה עצמה
+      // תהיה מסוננת כך, לא רק שהמסמכים הבודדים יעברו את הבדיקה.
+      allow list: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);
+      allow create: if (isAdmin() || isActiveUser())
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerEmail == request.auth.token.email
+        && pdfFieldOk(request.resource.data);
+      allow update: if pdfFieldOk(request.resource.data) && (
+        isAdmin() ||
+        (isActiveUser() && resource.data.ownerId == request.auth.uid
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.ownerEmail == resource.data.ownerEmail)
+      );
+      allow delete: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);
+    }
+
     match /submissions/{submissionId} {
-      allow get, list: if isAdmin();
+      allow get, list: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);
       allow create: if signedIn()
         && request.resource.data.templateId is string
         && request.resource.data.filledBy is string
+        && request.resource.data.ownerId is string
+        // מוודאים מול הבעלים האמיתי של התבנית - לא סומכים על מה שהממלא
+        // האנונימי מדווח על עצמו, כדי שלא יהיה אפשר "להסתיר" הגשה מהבעלים
+        // האמיתי שלה ע"י שליחת ownerId שגוי.
+        && request.resource.data.ownerId ==
+             get(/databases/$(database)/documents/templates/$(request.resource.data.templateId)).data.ownerId
         && request.resource.data.createdAt == request.time
         && pdfFieldOk(request.resource.data);
-      allow update, delete: if isAdmin();
+      allow update, delete: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);
     }
   }
 }

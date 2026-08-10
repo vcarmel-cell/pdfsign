@@ -47,3 +47,19 @@ async function fbInit() {
     auth: firebase.auth()
   };
 }
+
+// מריץ פעולת Auth (כמו יצירת משתמש חדש) על אפליקציית Firebase שנייה, זמנית -
+// כדי שזה לא יחליף את המשתמש המחובר כרגע (מנהל שיוצר משתמש חדש היה "מתחבר"
+// בטעות בתור המשתמש החדש אחרת, כי createUserWithEmailAndPassword מתחבר
+// אוטומטית בתור המשתמש שנוצר). אין Cloud Functions/Admin SDK באפליקציה הזו,
+// אז זו הדרך התקנית מצד לקוח בלבד ליצור משתמשים חדשים בלי להתנתק בעצמך.
+async function withSecondaryAuth(fn) {
+  const existing = firebase.apps.find(a => a.name === 'secondary');
+  if (existing) await existing.delete();
+  const secondaryApp = firebase.initializeApp(FIREBASE_CONFIG, 'secondary');
+  try {
+    return await fn(secondaryApp.auth());
+  } finally {
+    await secondaryApp.delete();
+  }
+}

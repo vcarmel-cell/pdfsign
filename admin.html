@@ -65,6 +65,14 @@
   }
   .t-main { display: flex; flex-direction: column; gap: .15rem; min-width: 160px; }
   .t-meta { color: var(--text-muted); font-size: .8rem; }
+  .t-owner { color: var(--primary); font-size: .78rem; }
+  .user-row {
+    background: white; border: 1px solid var(--border); border-radius: 10px;
+    padding: .8rem 1rem; margin-bottom: .6rem; display: flex; flex-wrap: wrap;
+    align-items: center; gap: .6rem; justify-content: space-between;
+  }
+  .u-main { display: flex; flex-direction: column; gap: .15rem; min-width: 160px; }
+  .u-meta { color: var(--text-muted); font-size: .8rem; }
   .t-active { font-size: .8rem; display: flex; align-items: center; gap: .3rem; white-space: nowrap; }
   .t-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
   .t-actions button { font-size: .8rem; padding: .4rem .6rem; }
@@ -136,6 +144,8 @@
   <h1>ניהול טפסי PDF</h1>
   <div id="user-bar">
     <span id="current-user-email"></span>
+    <button type="button" id="nav-templates-btn" class="secondary">תבניות</button>
+    <button type="button" id="nav-users-btn" class="secondary" style="display:none;">ניהול משתמשים</button>
     <button id="logout-btn">התנתקות</button>
   </div>
 </header>
@@ -172,6 +182,31 @@
       <p class="error" id="upload-error"></p>
     </div>
     <div id="templates-list"></div>
+    <details style="margin-top:1rem;">
+      <summary style="cursor:pointer; color:var(--text-muted); font-size:.85rem;">שינוי סיסמה</summary>
+      <div class="card" style="max-width:320px;">
+        <form id="change-password-form" style="flex-direction:column;">
+          <input type="password" id="new-password-input" placeholder="סיסמה חדשה (לפחות 6 תווים)" required minlength="6" />
+          <button type="submit">עדכון סיסמה</button>
+        </form>
+        <p class="error" id="change-password-error"></p>
+        <p id="change-password-success" style="color:#059669; font-size:.85rem;"></p>
+      </div>
+    </details>
+  </section>
+
+  <section id="view-users" class="view">
+    <h2>ניהול משתמשים</h2>
+    <div class="card">
+      <form id="create-user-form">
+        <input type="email" id="new-user-email" placeholder="אימייל המשתמש" required />
+        <input type="text" id="new-user-password" placeholder="סיסמה זמנית (לפחות 6 תווים)" required minlength="6" />
+        <button type="submit">יצירת משתמש</button>
+      </form>
+      <p style="font-size:.8rem; color:var(--text-muted); margin:0 0 .4rem 0;">המשתמש יוכל להתחבר עם האימייל והסיסמה הזמנית הזו, ולשנות אותה בעצמו מתוך "תבניות" → "שינוי סיסמה".</p>
+      <p class="error" id="create-user-error"></p>
+    </div>
+    <div id="users-list"></div>
   </section>
 
   <section id="view-editor" class="view">
@@ -219,6 +254,9 @@
 <script src="js/pdf-field-utils.js"></script>
 <script>
 let db, auth, currentUser = null;
+let currentRole = null;        // 'admin' | 'user'
+let currentUserProfile = null; // users/{uid} doc data, for regular users only
+let userDocUnsub = null;
 
 const editorState = {
   template: null,
@@ -242,6 +280,33 @@ function showView(name) {
   document.getElementById('user-bar').style.display = (name === 'login' || name === 'unauthorized') ? 'none' : 'flex';
 }
 
+// אם ההרשאה של המשתמש נשללה (המנהל ביטל גישה) בזמן שהוא כבר בתוך האפליקציה,
+// הקריאה הבאה ל-Firestore תיכשל עם permission-denied - זו התפיסה של זה
+// (בנוסף ל-watchOwnUserDoc, שתופס את זה גם בלי לחכות לפעולה הבאה).
+async function handleFirestoreError(err) {
+  if (err && err.code === 'permission-denied' && currentRole !== 'admin') {
+    if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
+    await auth.signOut();
+    showView('unauthorized');
+    return true;
+  }
+  return false;
+}
+
+function watchOwnUserDoc(uid) {
+  if (userDocUnsub) userDocUnsub();
+  userDocUnsub = db.collection('users').doc(uid).onSnapshot(async (doc) => {
+    if (!doc.exists || doc.data().active !== true) {
+      if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
+      await auth.signOut();
+      showView('unauthorized');
+    }
+  });
+}
+
+document.getElementById('nav-templates-btn').addEventListener('click', () => { showView('templates'); loadTemplatesList(); });
+document.getElementById('nav-users-btn').addEventListener('click', () => { showView('users'); loadUsersList(); });
+
 // ─── התחברות ─────────────────────────────────────────────
 document.getElementById('login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -258,13 +323,35 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
 document.getElementById('logout-btn').addEventListener('click', () => auth.signOut());
 
 // ─── רשימת תבניות ────────────────────────────────────────
+// תבניות שנוצרו לפני שדרוג המשתמשים המרובים אין להן ownerId בכלל - בלעדיו
+// אי אפשר למלא אותן (חוקי ה-Firestore דורשים ownerId תואם), אז בפעם הראשונה
+// שהמנהל טוען את הרשימה אחרי השדרוג, "מאמצים" אותן אליו אוטומטית.
+async function migrateTemplatesMissingOwner(templates) {
+  const missing = templates.filter(t => !t.ownerId);
+  for (const t of missing) {
+    t.ownerId = currentUser.uid;
+    t.ownerEmail = currentUser.email;
+    try {
+      await db.collection('templates').doc(t.id).update({ ownerId: currentUser.uid, ownerEmail: currentUser.email });
+    } catch (err) { /* לא קריטי - ינסה שוב בטעינה הבאה */ }
+  }
+}
+
 async function loadTemplatesList() {
   const list = document.getElementById('templates-list');
   list.innerHTML = '<p>טוען...</p>';
-  const snap = await db.collection('templates').get();
-  const templates = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
-  templates.sort((a, b) => (b.createdAt ? b.createdAt.toMillis() : 0) - (a.createdAt ? a.createdAt.toMillis() : 0));
-  renderTemplatesList(templates);
+  try {
+    const query = currentRole === 'admin'
+      ? db.collection('templates')
+      : db.collection('templates').where('ownerId', '==', currentUser.uid);
+    const snap = await query.get();
+    const templates = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    if (currentRole === 'admin') await migrateTemplatesMissingOwner(templates);
+    templates.sort((a, b) => (b.createdAt ? b.createdAt.toMillis() : 0) - (a.createdAt ? a.createdAt.toMillis() : 0));
+    renderTemplatesList(templates);
+  } catch (err) {
+    if (!(await handleFirestoreError(err))) list.innerHTML = '<p class="error">שגיאה בטעינת התבניות: ' + escapeHtml(err.message) + '</p>';
+  }
 }
 
 function renderTemplatesList(templates) {
@@ -278,6 +365,7 @@ function renderTemplatesList(templates) {
       '<div class="t-main">' +
         '<strong>' + escapeHtml(t.name) + '</strong>' +
         '<span class="t-meta">' + (t.pageCount || 0) + ' עמודים · ' + (t.fields ? t.fields.length : 0) + ' שדות</span>' +
+        (currentRole === 'admin' && t.ownerEmail ? '<span class="t-owner">בעלים: ' + escapeHtml(t.ownerEmail) + '</span>' : '') +
       '</div>' +
       '<label class="t-active"><input type="checkbox" class="t-active-toggle" ' + (t.active !== false ? 'checked' : '') + ' /> קישור פעיל</label>' +
       '<div class="t-actions">' +
@@ -327,7 +415,9 @@ async function createTemplate(file, name) {
   await db.collection('templates').doc(templateId).set({
     id: templateId,
     name: name,
-    notifyEmail: currentUser.email,
+    ownerId: currentUser.uid,
+    ownerEmail: currentUser.email,
+    notifyEmail: (currentUserProfile && currentUserProfile.notifyEmail) || currentUser.email,
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     active: true,
@@ -358,7 +448,13 @@ function buildShareLink(templateId) {
 
 // ─── עורך השדות ──────────────────────────────────────────
 async function openTemplateEditor(templateId) {
-  const doc = await db.collection('templates').doc(templateId).get();
+  let doc;
+  try {
+    doc = await db.collection('templates').doc(templateId).get();
+  } catch (err) {
+    if (!(await handleFirestoreError(err))) alert('שגיאה בטעינת התבנית: ' + err.message);
+    return;
+  }
   if (!doc.exists) { alert('התבנית לא נמצאה'); return; }
 
   editorState.template = Object.assign({ id: doc.id }, doc.data());
@@ -630,10 +726,16 @@ async function openSubmissionsView(templateId, templateName) {
   document.getElementById('submissions-title').textContent = 'הגשות: ' + templateName;
   const list = document.getElementById('submissions-list');
   list.innerHTML = '<p>טוען...</p>';
-  const snap = await db.collection('submissions').where('templateId', '==', templateId).get();
-  const submissions = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
-  submissions.sort((a, b) => (b.createdAt ? b.createdAt.toMillis() : 0) - (a.createdAt ? a.createdAt.toMillis() : 0));
-  renderSubmissionsList(submissions);
+  try {
+    let query = db.collection('submissions').where('templateId', '==', templateId);
+    if (currentRole !== 'admin') query = query.where('ownerId', '==', currentUser.uid);
+    const snap = await query.get();
+    const submissions = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    submissions.sort((a, b) => (b.createdAt ? b.createdAt.toMillis() : 0) - (a.createdAt ? a.createdAt.toMillis() : 0));
+    renderSubmissionsList(submissions);
+  } catch (err) {
+    if (!(await handleFirestoreError(err))) list.innerHTML = '<p class="error">שגיאה בטעינת ההגשות: ' + escapeHtml(err.message) + '</p>';
+  }
 }
 
 function renderSubmissionsList(submissions) {
@@ -678,6 +780,96 @@ async function deleteSubmission(submission, currentList) {
   renderSubmissionsList(currentList.filter(s => s.id !== submission.id));
 }
 
+// ─── ניהול משתמשים ───────────────────────────────────────
+async function loadUsersList() {
+  const list = document.getElementById('users-list');
+  list.innerHTML = '<p>טוען...</p>';
+  try {
+    const snap = await db.collection('users').get();
+    const users = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    users.sort((a, b) => (b.createdAt ? b.createdAt.toMillis() : 0) - (a.createdAt ? a.createdAt.toMillis() : 0));
+    renderUsersList(users);
+  } catch (err) {
+    list.innerHTML = '<p class="error">שגיאה בטעינת המשתמשים: ' + escapeHtml(err.message) + '</p>';
+  }
+}
+
+function renderUsersList(users) {
+  const list = document.getElementById('users-list');
+  if (!users.length) { list.innerHTML = '<p>אין משתמשים עדיין.</p>'; return; }
+  list.innerHTML = '';
+  users.forEach(u => {
+    const row = document.createElement('div');
+    row.className = 'user-row';
+    const date = u.createdAt ? u.createdAt.toDate().toLocaleString('he-IL') : '—';
+    row.innerHTML =
+      '<div class="u-main">' +
+        '<strong>' + escapeHtml(u.email) + '</strong>' +
+        '<span class="u-meta">נוצר: ' + escapeHtml(date) + ' · ' + (u.active !== false ? 'פעיל' : 'גישה בוטלה') + '</span>' +
+      '</div>' +
+      '<button type="button" class="u-toggle ' + (u.active !== false ? 'danger' : '') + '">' + (u.active !== false ? 'בטל גישה' : 'הפעל מחדש') + '</button>';
+    row.querySelector('.u-toggle').addEventListener('click', () => setUserActive(u.id, u.active === false));
+    list.appendChild(row);
+  });
+}
+
+async function setUserActive(uid, active) {
+  try {
+    await db.collection('users').doc(uid).update({ active });
+    await loadUsersList();
+  } catch (err) {
+    alert('שגיאה בעדכון המשתמש: ' + err.message);
+  }
+}
+
+document.getElementById('create-user-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('new-user-email').value.trim();
+  const password = document.getElementById('new-user-password').value;
+  const errorEl = document.getElementById('create-user-error');
+  errorEl.textContent = '';
+  try {
+    const uid = await withSecondaryAuth(async (secondaryAuth) => {
+      const cred = await secondaryAuth.createUserWithEmailAndPassword(email, password);
+      await secondaryAuth.signOut();
+      return cred.user.uid;
+    });
+    await db.collection('users').doc(uid).set({
+      uid: uid, email: email, role: 'user', active: true, notifyEmail: email,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser.uid
+    });
+    e.target.reset();
+    await loadUsersList();
+  } catch (err) {
+    if (err.code === 'auth/email-already-in-use') {
+      errorEl.textContent = 'כבר קיים משתמש עם המייל הזה - אם הגישה שלו בוטלה בעבר, חפשו אותו ברשימה למטה ולחצו "הפעל מחדש" במקום ליצור חדש.';
+    } else {
+      errorEl.textContent = 'שגיאה ביצירת המשתמש: ' + err.message;
+    }
+  }
+});
+
+// ─── שינוי סיסמה עצמי ────────────────────────────────────
+document.getElementById('change-password-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const newPassword = document.getElementById('new-password-input').value;
+  const errorEl = document.getElementById('change-password-error');
+  const successEl = document.getElementById('change-password-success');
+  errorEl.textContent = ''; successEl.textContent = '';
+  try {
+    await auth.currentUser.updatePassword(newPassword);
+    successEl.textContent = 'הסיסמה עודכנה בהצלחה.';
+    e.target.reset();
+  } catch (err) {
+    if (err.code === 'auth/requires-recent-login') {
+      errorEl.textContent = 'מטעמי אבטחה יש להתנתק ולהתחבר מחדש לפני שינוי הסיסמה.';
+    } else {
+      errorEl.textContent = 'שגיאה בעדכון הסיסמה: ' + err.message;
+    }
+  }
+});
+
 // ─── אתחול ───────────────────────────────────────────────
 async function init() {
   await loadScripts(FIREBASE_SDK_URLS);
@@ -687,10 +879,27 @@ async function init() {
   await loadPdfJs();
 
   auth.onAuthStateChanged(async (user) => {
-    if (!user) { showView('login'); return; }
-    if (user.email !== ADMIN_EMAIL) { await auth.signOut(); showView('unauthorized'); return; }
-    currentUser = user;
+    if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
+    if (!user) { currentUser = null; currentRole = null; currentUserProfile = null; showView('login'); return; }
+
+    if (user.email === ADMIN_EMAIL) {
+      currentUser = user; currentRole = 'admin'; currentUserProfile = null;
+    } else {
+      let userDoc;
+      try {
+        userDoc = await db.collection('users').doc(user.uid).get();
+      } catch (err) {
+        await auth.signOut(); showView('unauthorized'); return;
+      }
+      if (!userDoc.exists || userDoc.data().active !== true) {
+        await auth.signOut(); showView('unauthorized'); return;
+      }
+      currentUser = user; currentRole = 'user'; currentUserProfile = userDoc.data();
+      watchOwnUserDoc(user.uid);
+    }
+
     document.getElementById('current-user-email').textContent = user.email;
+    document.getElementById('nav-users-btn').style.display = (currentRole === 'admin') ? 'inline-block' : 'none';
     showView('templates');
     loadTemplatesList();
   });
