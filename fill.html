@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>מילוי טופס</title>
 <style>
-  :root { --primary: #2563eb; --primary-dark: #1d4ed8; --danger: #dc2626; --border: #d1d5db; --bg: #f3f4f6; --text: #111827; }
+  :root { --primary: #2563eb; --primary-dark: #1d4ed8; --danger: #dc2626; --border: #d1d5db; --bg: #f3f4f6; --text: #111827; --text-muted: #6b7280; }
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
   header { background: #111827; color: white; padding: .9rem 1.2rem; }
@@ -40,6 +40,17 @@
   .sig-clear-btn {
     position: absolute; left: 2px; bottom: 2px; font-size: 9px; padding: 2px 6px;
     background: #7c3aed; border-radius: 4px;
+  }
+  .fill-readonly-value {
+    width: 100%; height: 100%; display: flex; align-items: center; padding: 0 4px;
+    background: rgba(107,114,128,.1); border: 1px solid var(--border); border-radius: 3px;
+    font-size: 12px; color: var(--text); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; box-sizing: border-box;
+  }
+  .signed-image { width: 100%; height: 100%; object-fit: contain; }
+  .pending-signature {
+    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+    background: rgba(107,114,128,.1); border: 1.5px dashed var(--border); border-radius: 4px;
+    font-size: 10px; color: var(--text-muted); text-align: center; padding: 2px; box-sizing: border-box;
   }
 
   .submit-bar {
@@ -78,8 +89,9 @@
 
   <div id="view-success" style="display:none">
     <div class="card">
-      <h2>הטופס נשלח בהצלחה</h2>
-      <p>תודה, <span id="success-name"></span>. עותק חתום נשמר במערכת.</p>
+      <h2 id="success-title">הטופס נשלח בהצלחה</h2>
+      <p>תודה, <span id="success-name"></span>!</p>
+      <p id="success-status"></p>
       <a id="download-link">הורדת עותק אישי</a>
       <p id="success-note" class="error"></p>
     </div>
@@ -107,6 +119,9 @@ let pdfDocJs = null;
 const pageBoxSizes = {};
 let fieldRuntime = {};
 let flattenedBytesCache = null;
+// כשלא null: {submissionId, signerFieldId, data} - מצב "מסמך רב-חותמים"
+// (כמה אנשים חותמים על אותו מסמך משותף, לא עותק עצמאי לכל אחד).
+let multiSign = null;
 
 function showView(name) {
   ['loading', 'invalid', 'fill', 'submitting', 'success'].forEach(v => {
@@ -140,7 +155,7 @@ async function renderFillDocument() {
 
     (template.fields || []).filter(f => f.page === i).forEach(field => {
       const rectPx = pctRectToPx(field, boxSize.cssWidth, boxSize.cssHeight);
-      wrapper.appendChild(createFillFieldEl(field, rectPx));
+      wrapper.appendChild(multiSign ? createMultiSignFieldEl(field, rectPx) : createFillFieldEl(field, rectPx));
     });
   }
 }
@@ -197,6 +212,52 @@ function createFillFieldEl(field, rectPx) {
   return box;
 }
 
+// ─── שדות במסמך רב-חותמים: ערכים משותפים לקריאה בלבד אחרי שמישהו כבר
+// מילא אותם, וחתימות של חותמים אחרים מוצגות כתמונה (לא ניתנות לעריכה). ───
+function createMultiSignFieldEl(field, rectPx) {
+  const sub = multiSign.data;
+
+  // זו החתימה שלי, או ערך משותף שעדיין לא מולא - מתנהג בדיוק כמו מצב single רגיל.
+  if (field.type === 'signature' && field.id === multiSign.signerFieldId) {
+    return createFillFieldEl(field, rectPx);
+  }
+  if (field.type !== 'signature' && !(sub.values && Object.prototype.hasOwnProperty.call(sub.values, field.id))) {
+    return createFillFieldEl(field, rectPx);
+  }
+
+  // אחרת: שדה לקריאה בלבד (כבר מולא/נחתם ע"י מישהו אחר).
+  const box = document.createElement('div');
+  box.className = 'fill-field-box';
+  applyRectPx(box, rectPx);
+  const labelTag = document.createElement('div');
+  labelTag.className = 'fill-field-label';
+  labelTag.textContent = field.label;
+  box.appendChild(labelTag);
+
+  if (field.type === 'signature') {
+    const rawSig = (sub.rawSignatures || {})[field.id];
+    if (rawSig) {
+      const img = document.createElement('img');
+      img.className = 'signed-image';
+      img.src = 'data:image/png;base64,' + rawSig;
+      box.appendChild(img);
+    } else {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'pending-signature';
+      placeholder.textContent = 'ממתין לחתימת ' + field.label;
+      box.appendChild(placeholder);
+    }
+  } else {
+    const readonly = document.createElement('div');
+    readonly.className = 'fill-readonly-value';
+    readonly.textContent = field.type === 'checkbox' ? (sub.values[field.id] ? '✓' : '—') : String(sub.values[field.id]);
+    box.appendChild(readonly);
+  }
+
+  fieldRuntime[field.id] = { isFilled: () => true, getStamp: null, readOnly: true };
+  return box;
+}
+
 function validateRequired() {
   const missing = [];
   (template.fields || []).forEach(field => {
@@ -207,25 +268,15 @@ function validateRequired() {
   return missing;
 }
 
-// ─── רינדור טקסט עברי כתמונה (עוקף בעיות קידוד גופנים ב-PDF) ───
-function renderTextToPngDataUrl(text, widthPt, heightPt, fontSizePt) {
-  const scale = 3; // רזולוציה גבוהה כדי שהטקסט ייראה חד גם בהגדלה
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(widthPt * scale));
-  canvas.height = Math.max(1, Math.round(heightPt * scale));
-  const ctx = canvas.getContext('2d');
-  ctx.scale(scale, scale);
-  ctx.font = fontSizePt + 'px Arial, "Noto Sans Hebrew", sans-serif';
-  ctx.textBaseline = 'middle';
-  ctx.direction = 'rtl';
-  ctx.textAlign = 'right';
-  ctx.fillStyle = '#111';
-  ctx.fillText(text, widthPt - 2, heightPt / 2, widthPt - 4);
-  return canvas.toDataURL('image/png');
-}
+// renderTextToPngDataUrl ו-flattenPdf עברו ל-js/pdf-field-utils.js כדי
+// שגם admin.html (כפתור "נסה שוב להשלים") יוכל להשתמש בהן.
 
-// ─── שליחת הטופס ──────────────────────────────────────────
-document.getElementById('submit-btn').addEventListener('click', async () => {
+// ─── שליחת הטופס: מצב single (עותק עצמאי לכל ממלא, ללא שינוי בהתנהגות) ───
+document.getElementById('submit-btn').addEventListener('click', () => {
+  if (multiSign) submitMultiSignMode(); else submitSingleMode();
+});
+
+async function submitSingleMode() {
   const errorEl = document.getElementById('validation-error');
   const missing = validateRequired();
   if (missing.length) {
@@ -237,44 +288,15 @@ document.getElementById('submit-btn').addEventListener('click', async () => {
 
   try {
     const originalBytes = base64ToUint8Array(template.pdfBase64);
-    const pdfDoc = await PDFLib.PDFDocument.load(originalBytes);
     const values = {};
-
-    for (const field of (template.fields || [])) {
+    const flattenedBytes = await flattenPdf(originalBytes, template.fields || [], (field) => {
       const rt = fieldRuntime[field.id];
-      if (!rt) continue;
+      if (!rt) return null;
       const stamp = rt.getStamp();
-      const page = pdfDoc.getPage(field.page);
-      const coords = pctFieldToPdfCoords(field, page.getWidth(), page.getHeight());
+      values[field.id] = stamp.kind === 'checkbox' ? stamp.checked : (stamp.kind === 'signature' ? true : stamp.value);
+      return stamp;
+    });
 
-      if (stamp.kind === 'text') {
-        values[field.id] = stamp.value;
-        if (stamp.value) {
-          const dataUrl = renderTextToPngDataUrl(stamp.value, coords.wPt, coords.hPt, field.fontSize || 12);
-          const pngBytes = await (await fetch(dataUrl)).arrayBuffer();
-          const img = await pdfDoc.embedPng(pngBytes);
-          page.drawImage(img, { x: coords.xPt, y: coords.yPt, width: coords.wPt, height: coords.hPt });
-        }
-      } else if (stamp.kind === 'checkbox') {
-        values[field.id] = stamp.checked;
-        if (stamp.checked) {
-          const pad = Math.min(coords.wPt, coords.hPt) * 0.18;
-          const thickness = Math.max(1, Math.min(coords.wPt, coords.hPt) * 0.12);
-          const color = PDFLib.rgb(0, 0, 0);
-          page.drawLine({ start: { x: coords.xPt + pad, y: coords.yPt + pad }, end: { x: coords.xPt + coords.wPt - pad, y: coords.yPt + coords.hPt - pad }, thickness, color });
-          page.drawLine({ start: { x: coords.xPt + coords.wPt - pad, y: coords.yPt + pad }, end: { x: coords.xPt + pad, y: coords.yPt + coords.hPt - pad }, thickness, color });
-        }
-      } else if (stamp.kind === 'signature') {
-        values[field.id] = true;
-        if (stamp.dataUrl) {
-          const pngBytes = await (await fetch(stamp.dataUrl)).arrayBuffer();
-          const img = await pdfDoc.embedPng(pngBytes);
-          page.drawImage(img, { x: coords.xPt, y: coords.yPt, width: coords.wPt, height: coords.hPt });
-        }
-      }
-    }
-
-    const flattenedBytes = await pdfDoc.save();
     flattenedBytesCache = flattenedBytes;
     const pdfBase64 = uint8ToBase64(flattenedBytes);
     // אין Firebase Storage - הקובץ נשמר כ-Base64 בתוך מסמך Firestore עצמו,
@@ -288,6 +310,8 @@ document.getElementById('submit-btn').addEventListener('click', async () => {
       templateId: template.id,
       templateName: template.name,
       ownerId: template.ownerId,
+      mode: 'single',
+      status: 'completed',
       filledBy: fillerName,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       values: values
@@ -298,12 +322,108 @@ document.getElementById('submit-btn').addEventListener('click', async () => {
 
     sendEmailNotification(pdfBase64, emailAttachmentOk).catch(err => console.warn('שליחת מייל ההתראה נכשלה (ההגשה עצמה נשמרה בהצלחה):', err));
 
-    showSuccessScreen(flattenedBytes, savedInSystem);
+    showSuccessScreen({ title: 'הטופס נשלח בהצלחה', status: 'עותק חתום נשמר במערכת.', bytes: flattenedBytes, savedInSystem });
   } catch (err) {
     showView('fill');
     document.getElementById('validation-error').textContent = 'שגיאה בשליחת הטופס: ' + err.message;
   }
-});
+}
+
+// ─── שליחת חתימה: מצב multiSign (מסמך משותף, כמה חותמים) ───
+async function submitMultiSignMode() {
+  const errorEl = document.getElementById('validation-error');
+  const missing = validateRequired();
+  if (missing.length) {
+    errorEl.textContent = 'נא למלא: ' + missing.join(', ');
+    return;
+  }
+  errorEl.textContent = '';
+  showView('submitting');
+
+  try {
+    const signatureFields = (template.fields || []).filter(f => f.type === 'signature');
+    const myField = signatureFields.find(f => f.id === multiSign.signerFieldId);
+    const myStamp = fieldRuntime[myField.id].getStamp();
+    const mySignatureBase64 = myStamp.dataUrl.replace(/^data:image\/png;base64,/, '');
+
+    const myValues = {};
+    (template.fields || []).forEach(field => {
+      if (field.type === 'signature') return;
+      const rt = fieldRuntime[field.id];
+      if (!rt || rt.readOnly) return; // כבר קיים - לא שלי למלא
+      const stamp = rt.getStamp();
+      myValues[field.id] = stamp.kind === 'checkbox' ? stamp.checked : stamp.value;
+    });
+
+    const submissionRef = db.collection('submissions').doc(multiSign.submissionId);
+    let completionResult = null;
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(submissionRef);
+      if (!snap.exists) throw new Error('סבב החתימות לא נמצא.');
+      const data = snap.data();
+      if (data.status !== 'in_progress') throw new Error('ALREADY_HANDLED');
+
+      const update = {};
+      update['signerNames.' + myField.id] = fillerName;
+      update['rawSignatures.' + myField.id] = mySignatureBase64;
+
+      const mergedValues = Object.assign({}, data.values || {});
+      Object.keys(myValues).forEach((k) => {
+        if (!(k in mergedValues)) { mergedValues[k] = myValues[k]; update['values.' + k] = myValues[k]; }
+      });
+
+      const mergedRawSignatures = Object.assign({}, data.rawSignatures || {});
+      mergedRawSignatures[myField.id] = mySignatureBase64;
+      const allSigned = signatureFields.every(f => !!mergedRawSignatures[f.id]);
+
+      update.status = allSigned ? 'completing' : 'in_progress';
+      if (allSigned) completionResult = { values: mergedValues, rawSignatures: mergedRawSignatures };
+      tx.update(submissionRef, update);
+    });
+
+    if (completionResult) {
+      const originalBytes = base64ToUint8Array(template.pdfBase64);
+      const flattenedBytes = await flattenPdf(originalBytes, template.fields || [], (field) => {
+        if (field.type === 'signature') {
+          const raw = completionResult.rawSignatures[field.id];
+          return raw ? { kind: 'signature', dataUrl: 'data:image/png;base64,' + raw } : null;
+        }
+        const val = completionResult.values[field.id];
+        if (field.type === 'checkbox') return { kind: 'checkbox', checked: !!val };
+        if (val === undefined || val === null || val === '') return null;
+        return { kind: 'text', value: val };
+      });
+
+      flattenedBytesCache = flattenedBytes;
+      const pdfBase64 = uint8ToBase64(flattenedBytes);
+      const savedInSystem = pdfBase64.length <= MAX_PDF_BASE64_BYTES;
+      const emailAttachmentOk = flattenedBytes.length <= EMAILJS_MAX_ATTACHMENT_BYTES;
+
+      const finalUpdate = {
+        status: 'completed',
+        completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        rawSignatures: firebase.firestore.FieldValue.delete()
+      };
+      if (savedInSystem) finalUpdate.pdfBase64 = pdfBase64;
+      await submissionRef.update(finalUpdate);
+
+      sendEmailNotification(pdfBase64, emailAttachmentOk).catch(err => console.warn('שליחת מייל ההתראה נכשלה:', err));
+
+      showSuccessScreen({ title: 'המסמך הושלם', status: 'כל החתימות נאספו ועותק חתום נשמר במערכת.', bytes: flattenedBytes, savedInSystem });
+    } else {
+      showSuccessScreen({ title: 'החתימה שלך נשמרה', status: 'ממתינים לחתימות נוספות לפני שהמסמך יושלם.', bytes: null, savedInSystem: true });
+    }
+  } catch (err) {
+    if (err.message === 'ALREADY_HANDLED') {
+      document.querySelector('#view-invalid p').textContent = 'החתימה הזו כבר בוצעה, או שסבב החתימות הסתיים.';
+      showView('invalid');
+      return;
+    }
+    showView('fill');
+    document.getElementById('validation-error').textContent = 'שגיאה בשליחת החתימה: ' + err.message;
+  }
+}
 
 async function sendEmailNotification(pdfBase64, includeAttachment) {
   if (!EMAILJS_CONFIG.publicKey || EMAILJS_CONFIG.publicKey.startsWith('PASTE')) return;
@@ -319,16 +439,22 @@ async function sendEmailNotification(pdfBase64, includeAttachment) {
   await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, params);
 }
 
-function showSuccessScreen(bytes, savedInSystem) {
+function showSuccessScreen({ title, status, bytes, savedInSystem }) {
   document.getElementById('success-name').textContent = fillerName;
-  const blob = new Blob([bytes], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
+  document.getElementById('success-title').textContent = title;
+  document.getElementById('success-status').textContent = status;
   const link = document.getElementById('download-link');
-  link.href = url;
-  link.download = (template.name || 'document') + '.pdf';
-  document.getElementById('success-note').textContent = savedInSystem
-    ? ''
-    : 'שימו לב: הקובץ היה גדול מדי לשמירה במערכת - הקפידו להוריד עותק כעת.';
+  if (bytes) {
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    link.href = URL.createObjectURL(blob);
+    link.download = (template.name || 'document') + '.pdf';
+    link.style.display = 'inline-block';
+  } else {
+    link.style.display = 'none';
+  }
+  document.getElementById('success-note').textContent = (bytes && !savedInSystem)
+    ? 'שימו לב: הקובץ היה גדול מדי לשמירה במערכת - הקפידו להוריד עותק כעת.'
+    : '';
   showView('success');
 }
 
@@ -353,6 +479,8 @@ document.getElementById('start-fill-btn').addEventListener('click', async () => 
 async function init() {
   const params = new URLSearchParams(location.search);
   templateId = params.get('id');
+  const submissionId = params.get('submission');
+  const signerFieldId = params.get('signer');
   if (!templateId) { showView('invalid'); return; }
 
   await loadScripts(FIREBASE_SDK_URLS);
@@ -369,10 +497,30 @@ async function init() {
 
   const doc = await db.collection('templates').doc(templateId).get();
   if (!doc.exists || doc.data().active === false) { showView('invalid'); return; }
-
   template = Object.assign({ id: doc.id }, doc.data());
+
+  let modalTitle = template.name;
+
+  if (submissionId || signerFieldId) {
+    if (template.mode !== 'multiSign' || !submissionId || !signerFieldId) { showView('invalid'); return; }
+    const signerField = (template.fields || []).find(f => f.id === signerFieldId && f.type === 'signature');
+    if (!signerField) { showView('invalid'); return; }
+
+    const subDoc = await db.collection('submissions').doc(submissionId).get();
+    if (!subDoc.exists) { showView('invalid'); return; }
+    const subData = subDoc.data();
+    if (subData.status !== 'in_progress' || (subData.rawSignatures && subData.rawSignatures[signerFieldId])) {
+      document.querySelector('#view-invalid p').textContent = 'החתימה הזו כבר בוצעה, או שסבב החתימות הסתיים.';
+      showView('invalid');
+      return;
+    }
+
+    multiSign = { submissionId, signerFieldId, data: subData };
+    modalTitle = template.name + ' — חתימת ' + signerField.label;
+  }
+
   document.getElementById('page-title').textContent = template.name;
-  document.getElementById('name-modal-title').textContent = template.name;
+  document.getElementById('name-modal-title').textContent = modalTitle;
   showView('name-modal');
 }
 

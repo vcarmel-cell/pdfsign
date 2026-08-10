@@ -213,9 +213,21 @@
     <button type="button" id="back-to-templates-btn" class="secondary">← חזרה לרשימת התבניות</button>
     <h2 id="editor-title"></h2>
 
-    <div class="share-row">
+    <div class="notify-row">
+      <label style="display:flex; align-items:center; gap:.4rem; flex:1;">
+        <input type="checkbox" id="multisign-toggle" />
+        מסמך רב-חותמים (כמה אנשים חותמים על אותו מסמך משותף, ברצף)
+      </label>
+    </div>
+    <p id="multisign-hint" style="font-size:.8rem; color:var(--text-muted); margin:0 0 .6rem 0; display:none;">כל שדה חתימה בתבנית הופך לתפקיד (למשל "עובד", "מנהל") - שם השדה (בתיבת הטקסט שבכותרת השדה) הוא שם התפקיד. לחצו "התחלת סבב חתימות חדש" ואז "הגשות" כדי לקבל קישור נפרד לכל תפקיד.</p>
+
+    <div class="share-row" id="single-share-row">
       <input type="text" id="share-link-input" readonly />
       <button type="button" id="copy-link-btn">העתק קישור לשיתוף</button>
+    </div>
+    <div class="share-row" id="multisign-share-row" style="display:none;">
+      <button type="button" id="start-round-btn">התחלת סבב חתימות חדש</button>
+      <button type="button" id="view-rounds-btn" class="secondary">צפייה בסבבים (בהגשות)</button>
     </div>
 
     <div class="notify-row">
@@ -375,7 +387,7 @@ function renderTemplatesList(templates) {
         '<button type="button" class="t-delete danger">מחיקה</button>' +
       '</div>';
     row.querySelector('.t-edit').addEventListener('click', () => openTemplateEditor(t.id));
-    row.querySelector('.t-submissions').addEventListener('click', () => openSubmissionsView(t.id, t.name));
+    row.querySelector('.t-submissions').addEventListener('click', () => openSubmissionsView(t));
     row.querySelector('.t-link').addEventListener('click', () => {
       const link = buildShareLink(t.id);
       navigator.clipboard.writeText(link).then(() => alert('הקישור הועתק:\n' + link)).catch(() => alert(link));
@@ -446,6 +458,71 @@ function buildShareLink(templateId) {
   return url.toString();
 }
 
+function buildSignerLink(templateId, submissionId, fieldId) {
+  const url = new URL('fill.html', location.href);
+  url.searchParams.set('id', templateId);
+  url.searchParams.set('submission', submissionId);
+  url.searchParams.set('signer', fieldId);
+  return url.toString();
+}
+
+// ─── מסמך רב-חותמים (כמה אנשים חותמים על אותו מסמך משותף) ────
+async function hasActiveRound(templateId) {
+  let query = db.collection('submissions').where('templateId', '==', templateId);
+  if (currentRole !== 'admin') query = query.where('ownerId', '==', currentUser.uid);
+  const snap = await query.get();
+  return snap.docs.some(d => {
+    const s = d.data();
+    return s.mode === 'multiSign' && (s.status === 'in_progress' || s.status === 'completing');
+  });
+}
+
+async function refreshModeUi() {
+  const isMultiSign = editorState.template.mode === 'multiSign';
+  const toggle = document.getElementById('multisign-toggle');
+  toggle.checked = isMultiSign;
+  document.getElementById('multisign-hint').style.display = isMultiSign ? 'block' : 'none';
+  document.getElementById('single-share-row').style.display = isMultiSign ? 'none' : 'flex';
+  document.getElementById('multisign-share-row').style.display = isMultiSign ? 'flex' : 'none';
+
+  const active = await hasActiveRound(editorState.template.id);
+  toggle.disabled = active;
+  toggle.title = active ? 'לא ניתן לשנות בזמן שיש סבב חתימות פעיל על התבנית' : '';
+}
+
+document.getElementById('multisign-toggle').addEventListener('change', async (e) => {
+  const newMode = e.target.checked ? 'multiSign' : 'single';
+  try {
+    await db.collection('templates').doc(editorState.template.id).update({ mode: newMode });
+    editorState.template.mode = newMode;
+    await refreshModeUi();
+  } catch (err) {
+    e.target.checked = !e.target.checked;
+    alert('שגיאה בעדכון סוג התבנית: ' + err.message);
+  }
+});
+
+async function startNewSigningRound(template) {
+  const sigFields = (template.fields || []).filter(f => f.type === 'signature');
+  if (!sigFields.length) { alert('יש להוסיף לפחות שדה חתימה אחד לתבנית ולשמור שדות לפני התחלת סבב.'); return; }
+  const submissionId = db.collection('submissions').doc().id;
+  await db.collection('submissions').doc(submissionId).set({
+    id: submissionId,
+    templateId: template.id,
+    templateName: template.name,
+    ownerId: template.ownerId,
+    mode: 'multiSign',
+    status: 'in_progress',
+    values: {}, signerNames: {}, rawSignatures: {},
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  alert('סבב חתימות חדש נפתח. לחצו "הגשות" כדי לקבל את הקישורים לכל חותם.');
+  openSubmissionsView(template);
+}
+
+document.getElementById('start-round-btn').addEventListener('click', () => startNewSigningRound(editorState.template));
+document.getElementById('view-rounds-btn').addEventListener('click', () => openSubmissionsView(editorState.template));
+
 // ─── עורך השדות ──────────────────────────────────────────
 async function openTemplateEditor(templateId) {
   let doc;
@@ -469,6 +546,8 @@ async function openTemplateEditor(templateId) {
 
   document.getElementById('share-link-input').value = buildShareLink(templateId);
   document.getElementById('notify-email-input').value = editorState.template.notifyEmail || ADMIN_EMAIL;
+
+  await refreshModeUi();
 
   editorState.pdfDocJs = await loadPdfDocument(base64ToUint8Array(editorState.template.pdfBase64));
 
@@ -721,13 +800,16 @@ document.getElementById('back-to-templates-btn').addEventListener('click', () =>
 document.getElementById('back-to-templates-btn-2').addEventListener('click', () => { showView('templates'); loadTemplatesList(); });
 
 // ─── הגשות ───────────────────────────────────────────────
-async function openSubmissionsView(templateId, templateName) {
+let submissionsViewTemplate = null;
+
+async function openSubmissionsView(template) {
+  submissionsViewTemplate = template;
   showView('submissions');
-  document.getElementById('submissions-title').textContent = 'הגשות: ' + templateName;
+  document.getElementById('submissions-title').textContent = 'הגשות: ' + template.name;
   const list = document.getElementById('submissions-list');
   list.innerHTML = '<p>טוען...</p>';
   try {
-    let query = db.collection('submissions').where('templateId', '==', templateId);
+    let query = db.collection('submissions').where('templateId', '==', template.id);
     if (currentRole !== 'admin') query = query.where('ownerId', '==', currentUser.uid);
     const snap = await query.get();
     const submissions = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
@@ -745,20 +827,115 @@ function renderSubmissionsList(submissions) {
   submissions.forEach(s => {
     const row = document.createElement('div');
     row.className = 'submission-row';
-    const date = s.createdAt ? s.createdAt.toDate().toLocaleString('he-IL') : '—';
-    row.innerHTML =
-      '<span class="sub-name">' + escapeHtml(s.filledBy || '—') + '</span>' +
-      '<span class="sub-date">' + escapeHtml(date) + '</span>' +
-      (s.pdfBase64
-        ? '<button type="button" class="sub-download secondary">הורדה</button>'
-        : '<span class="sub-date">לא נשמר עותק במערכת (נשלח למייל בלבד)</span>') +
-      '<button type="button" class="sub-delete danger">מחיקה</button>';
-    if (s.pdfBase64) {
-      row.querySelector('.sub-download').addEventListener('click', () => downloadSubmissionPdf(s));
+    if ((s.mode || 'single') === 'multiSign') {
+      renderMultiSignRow(row, s, submissions);
+    } else {
+      renderSingleRow(row, s, submissions);
     }
-    row.querySelector('.sub-delete').addEventListener('click', () => deleteSubmission(s, submissions));
     list.appendChild(row);
   });
+}
+
+function renderSingleRow(row, s, submissions) {
+  const date = s.createdAt ? s.createdAt.toDate().toLocaleString('he-IL') : '—';
+  row.innerHTML =
+    '<span class="sub-name">' + escapeHtml(s.filledBy || '—') + '</span>' +
+    '<span class="sub-date">' + escapeHtml(date) + '</span>' +
+    (s.pdfBase64
+      ? '<button type="button" class="sub-download secondary">הורדה</button>'
+      : '<span class="sub-date">לא נשמר עותק במערכת (נשלח למייל בלבד)</span>') +
+    '<button type="button" class="sub-delete danger">מחיקה</button>';
+  if (s.pdfBase64) {
+    row.querySelector('.sub-download').addEventListener('click', () => downloadSubmissionPdf(s));
+  }
+  row.querySelector('.sub-delete').addEventListener('click', () => deleteSubmission(s, submissions));
+}
+
+function renderMultiSignRow(row, s, submissions) {
+  const sigFields = (submissionsViewTemplate.fields || []).filter(f => f.type === 'signature');
+  const signedCount = Object.keys(s.rawSignatures || (s.status === 'completed' ? s.signerNames || {} : {})).length;
+  const date = s.createdAt ? s.createdAt.toDate().toLocaleString('he-IL') : '—';
+
+  const statusText = s.status === 'completed' ? 'הושלם'
+    : s.status === 'completing' ? 'משלים... (אם זה נתקע, השתמשו בכפתור למטה)'
+    : (Object.keys(s.rawSignatures || {}).length) + '/' + sigFields.length + ' חתמו';
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex; flex-direction:column; gap:.4rem; width:100%;';
+  wrap.innerHTML =
+    '<div style="display:flex; flex-wrap:wrap; gap:.6rem; align-items:center; justify-content:space-between;">' +
+      '<span class="sub-date">נפתח: ' + escapeHtml(date) + ' · ' + escapeHtml(statusText) + '</span>' +
+      '<div class="t-actions"></div>' +
+    '</div>' +
+    '<div class="ms-roles" style="display:flex; flex-direction:column; gap:.3rem;"></div>';
+  row.appendChild(wrap);
+
+  const actionsEl = wrap.querySelector('.t-actions');
+  if (s.pdfBase64) {
+    const dl = document.createElement('button');
+    dl.type = 'button'; dl.className = 'secondary'; dl.textContent = 'הורדה';
+    dl.addEventListener('click', () => downloadSubmissionPdf(s));
+    actionsEl.appendChild(dl);
+  }
+  if (s.status === 'completing') {
+    const retry = document.createElement('button');
+    retry.type = 'button'; retry.textContent = 'נסה שוב להשלים';
+    retry.addEventListener('click', () => retryCompletion(s));
+    actionsEl.appendChild(retry);
+  }
+  const del = document.createElement('button');
+  del.type = 'button'; del.className = 'danger'; del.textContent = 'מחיקה';
+  del.addEventListener('click', () => deleteSubmission(s, submissions));
+  actionsEl.appendChild(del);
+
+  const rolesEl = wrap.querySelector('.ms-roles');
+  sigFields.forEach(f => {
+    const signed = s.rawSignatures && s.rawSignatures[f.id];
+    const completed = s.status === 'completed';
+    const roleRow = document.createElement('div');
+    roleRow.style.cssText = 'display:flex; align-items:center; gap:.5rem; font-size:.85rem;';
+    if (completed) {
+      roleRow.innerHTML = '<strong>' + escapeHtml(f.label) + '</strong><span class="sub-date">נחתם ע"י ' + escapeHtml((s.signerNames || {})[f.id] || '—') + '</span>';
+    } else if (signed) {
+      roleRow.innerHTML = '<strong>' + escapeHtml(f.label) + '</strong><span class="sub-date">נחתם ע"י ' + escapeHtml((s.signerNames || {})[f.id] || '—') + '</span>';
+    } else {
+      roleRow.innerHTML = '<strong>' + escapeHtml(f.label) + '</strong><span class="sub-date">ממתין לחתימה</span>';
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button'; copyBtn.className = 'secondary'; copyBtn.textContent = 'העתקת קישור';
+      copyBtn.addEventListener('click', () => {
+        const link = buildSignerLink(submissionsViewTemplate.id, s.id, f.id);
+        navigator.clipboard.writeText(link).then(() => alert('הקישור הועתק:\n' + link)).catch(() => alert(link));
+      });
+      roleRow.appendChild(copyBtn);
+    }
+    rolesEl.appendChild(roleRow);
+  });
+}
+
+async function retryCompletion(submission) {
+  try {
+    const values = submission.values || {};
+    const rawSignatures = submission.rawSignatures || {};
+    const bytes = base64ToUint8Array(submissionsViewTemplate.pdfBase64);
+    const flattenedBytes = await flattenPdf(bytes, submissionsViewTemplate.fields || [], (field) => {
+      if (field.type === 'signature') {
+        const raw = rawSignatures[field.id];
+        return raw ? { kind: 'signature', dataUrl: 'data:image/png;base64,' + raw } : null;
+      }
+      const val = values[field.id];
+      if (field.type === 'checkbox') return { kind: 'checkbox', checked: !!val };
+      if (val === undefined || val === null || val === '') return null;
+      return { kind: 'text', value: val };
+    });
+    const pdfBase64 = uint8ToBase64(flattenedBytes);
+    const update = { status: 'completed', completedAt: firebase.firestore.FieldValue.serverTimestamp(), rawSignatures: firebase.firestore.FieldValue.delete() };
+    if (pdfBase64.length <= MAX_PDF_BASE64_BYTES) update.pdfBase64 = pdfBase64;
+    await db.collection('submissions').doc(submission.id).update(update);
+    alert('ההשלמה בוצעה מחדש בהצלחה.');
+    openSubmissionsView(submissionsViewTemplate);
+  } catch (err) {
+    alert('שגיאה בניסיון ההשלמה החוזר: ' + err.message);
+  }
 }
 
 function downloadSubmissionPdf(submission) {
@@ -877,6 +1054,7 @@ async function init() {
   db = services.db; auth = services.auth;
 
   await loadPdfJs();
+  await loadScripts([PDF_LIB_SCRIPT_URL]); // ל"נסה שוב להשלים" בהגשות רב-חותמים
 
   auth.onAuthStateChanged(async (user) => {
     if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }

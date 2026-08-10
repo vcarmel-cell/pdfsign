@@ -42,7 +42,9 @@ function newId() {
 // מגבלת מסמך ב-Firestore היא 1MB; קידוד Base64 מוסיף כ-33% נפח, ולחתימות/טקסט
 // שמוטבעים בסוף יש תוספת נוספת - לכן קובץ המקור מוגבל ל-500KB בערך.
 const MAX_PDF_BYTES = 500 * 1024;
-const MAX_PDF_BASE64_BYTES = Math.floor(MAX_PDF_BYTES * 4 / 3) + 100 * 1024; // מרווח ביטחון להטבעות
+// חייב להישאר נמוך מהסף האמיתי ב-firestore.rules (pdfFieldOk: 750,000) - אחרת
+// מסמך יכול לעבור את הבדיקה הזו בצד הלקוח ועדיין להידחות בשרת.
+const MAX_PDF_BASE64_BYTES = 730000;
 const EMAILJS_MAX_ATTACHMENT_BYTES = 500 * 1024; // מגבלת התוכנית החינמית של EmailJS
 
 function uint8ToBase64(bytes) {
@@ -117,6 +119,55 @@ function pctFieldToPdfCoords(field, pageWidthPt, pageHeightPt) {
   const xPt = field.xPct * pageWidthPt;
   const yPt = pageHeightPt - (field.yPct * pageHeightPt) - hPt;
   return { xPt, yPt, wPt, hPt };
+}
+
+// ─── רינדור טקסט עברי כתמונה (עוקף בעיות קידוד גופנים ב-PDF) ───
+// משותף ל-fill.html (מילוי רגיל) ול-admin.html (כפתור "נסה שוב להשלים").
+function renderTextToPngDataUrl(text, widthPt, heightPt, fontSizePt) {
+  const scale = 3; // רזולוציה גבוהה כדי שהטקסט ייראה חד גם בהגדלה
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(widthPt * scale));
+  canvas.height = Math.max(1, Math.round(heightPt * scale));
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  ctx.font = fontSizePt + 'px Arial, "Noto Sans Hebrew", sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.direction = 'rtl';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#111';
+  ctx.fillText(text, widthPt - 2, heightPt / 2, widthPt - 4);
+  return canvas.toDataURL('image/png');
+}
+
+// ─── הטבעת שדות ב-PDF (משותף למצב single, השלמת multiSign, ו"נסה שוב
+// להשלים" באדמין) - resolveStamp(field) מחזיר {kind, value/checked/dataUrl}
+// או null אם לדלג על השדה. דורש PDFLib טעון (PDF_LIB_SCRIPT_URL). ───────
+async function flattenPdf(originalBytes, fields, resolveStamp) {
+  const pdfDoc = await PDFLib.PDFDocument.load(originalBytes);
+  for (const field of fields) {
+    const stamp = resolveStamp(field);
+    if (!stamp) continue;
+    const page = pdfDoc.getPage(field.page);
+    const coords = pctFieldToPdfCoords(field, page.getWidth(), page.getHeight());
+
+    if (stamp.kind === 'text' && stamp.value) {
+      const dataUrl = renderTextToPngDataUrl(stamp.value, coords.wPt, coords.hPt, field.fontSize || 12);
+      const pngBytes = await (await fetch(dataUrl)).arrayBuffer();
+      const img = await pdfDoc.embedPng(pngBytes);
+      page.drawImage(img, { x: coords.xPt, y: coords.yPt, width: coords.wPt, height: coords.hPt });
+    } else if (stamp.kind === 'checkbox' && stamp.checked) {
+      const pad = Math.min(coords.wPt, coords.hPt) * 0.18;
+      const thickness = Math.max(1, Math.min(coords.wPt, coords.hPt) * 0.12);
+      const color = PDFLib.rgb(0, 0, 0);
+      page.drawLine({ start: { x: coords.xPt + pad, y: coords.yPt + pad }, end: { x: coords.xPt + coords.wPt - pad, y: coords.yPt + coords.hPt - pad }, thickness, color });
+      page.drawLine({ start: { x: coords.xPt + coords.wPt - pad, y: coords.yPt + pad }, end: { x: coords.xPt + pad, y: coords.yPt + coords.hPt - pad }, thickness, color });
+    } else if (stamp.kind === 'signature' && stamp.dataUrl) {
+      const pngBytes = await (await fetch(stamp.dataUrl)).arrayBuffer();
+      const img = await pdfDoc.embedPng(pngBytes);
+      page.drawImage(img, { x: coords.xPt, y: coords.yPt, width: coords.wPt, height: coords.hPt });
+    }
+  }
+  return pdfDoc.save();
 }
 
 // ─── לוח חתימה (עכבר + מגע, Pointer Events מאוחדים) ──────────────

@@ -16,15 +16,13 @@ service cloud.firestore {
     }
     // אין Firebase Storage באפליקציה הזו - קובצי PDF נשמרים כ-Base64 בתוך
     // המסמך עצמו, ולכן חייבים להישאר קטנים מספיק כדי לא לחרוג ממגבלת 1MB
-    // למסמך ב-Firestore (ראו MAX_PDF_BYTES ב-js/pdf-field-utils.js).
+    // למסמך ב-Firestore (ראו MAX_PDF_BYTES/MAX_PDF_BASE64_BYTES ב-js/pdf-field-utils.js -
+    // הם חייבים להישאר נמוכים מהסף כאן).
     function pdfFieldOk(data) {
       return !('pdfBase64' in data) || data.pdfBase64.size() < 750000;
     }
 
     match /users/{userId} {
-      // get פתוח גם למשתמש על המסמך של עצמו (לא רק כש-active==true) - כדי
-      // שה-listener בזמן אמת יקבל את השינוי ל-active:false במקום למות
-      // משגיאת הרשאה לפני שהוא מספיק להגיב אליו (ראו watchOwnUserDoc).
       allow get: if isAdmin() || (signedIn() && request.auth.uid == userId);
       allow list: if isAdmin();
       allow create: if isAdmin()
@@ -34,7 +32,6 @@ service cloud.firestore {
         && request.resource.data.active == true
         && request.resource.data.createdAt == request.time
         && request.resource.data.createdBy == request.auth.uid;
-      // uid/email/createdBy/createdAt נעולים לשינוי - רק active/notifyEmail אמורים להתעדכן.
       allow update: if isAdmin()
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.email == resource.data.email
@@ -44,12 +41,7 @@ service cloud.firestore {
     }
 
     match /templates/{templateId} {
-      // fill.html שולף תבנית לפי מזהה ידוע (לא ניתן לניחוש) - get פתוח לכל
-      // מחובר (כולל אנונימי); זו בדיוק ההגנה - המזהה עצמו, לא ה-rule.
       allow get: if signedIn();
-      // list מוגבל: המנהל רואה הכול, משתמש רגיל רואה רק לפי שאילתת
-      // where('ownerId','==', uid) - כללי Firestore דורשים שהשאילתה עצמה
-      // תהיה מסוננת כך, לא רק שהמסמכים הבודדים יעברו את הבדיקה.
       allow list: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);
       allow create: if (isAdmin() || isActiveUser())
         && request.resource.data.ownerId == request.auth.uid
@@ -65,19 +57,80 @@ service cloud.firestore {
     }
 
     match /submissions/{submissionId} {
+      function realTemplateOf(data) {
+        return get(/databases/$(database)/documents/templates/$(data.templateId)).data;
+      }
+
+      // מצב "single" (ברירת מחדל, לא השתנה) - ממלא אנונימי יוצר הגשה גמורה
+      // אחת ומיד, לא ניתן לעריכה אחר כך.
+      function singleCreateAllowed(data) {
+        return data.status == 'completed'
+          && data.templateId is string
+          && data.filledBy is string
+          && data.ownerId is string
+          && data.ownerId == realTemplateOf(data).ownerId
+          && data.createdAt == request.time;
+      }
+
+      // מצב "multiSign" - רק הבעלים (מנהל/משתמש פעיל) יכול לפתוח סבב חתימות
+      // חדש וריק; ממלאים אנונימיים רק מעדכנים אותו אח"כ (allow update למטה).
+      function multiSignCreateAllowed(data) {
+        return data.status == 'in_progress'
+          && data.templateId is string
+          && data.ownerId is string
+          && (isAdmin() || (isActiveUser() && data.ownerId == request.auth.uid))
+          && data.ownerId == realTemplateOf(data).ownerId
+          && realTemplateOf(data).get('mode', 'single') == 'multiSign'
+          && data.values == {} && data.signerNames == {} && data.rawSignatures == {}
+          && !('pdfBase64' in data)
+          && data.createdAt == request.time;
+      }
+
+      // בדיקה ש-Map לא איבד/שינה מפתחות קיימים - רק תוספת מותרת (חותם לא יכול
+      // לדרוס/למחוק את מה שחותם אחר כבר שמר).
+      function additiveMapUpdate(beforeMap, afterMap) {
+        let d = beforeMap.diff(afterMap);
+        return d.removedKeys().size() == 0 && d.changedKeys().size() == 0;
+      }
+
+      // עדכון חלקי של חותם אנונימי בסבב "multiSign" פעיל: מוסיף רק את החתימה/
+      // שם/ערכים משותפים שלו, או (בכתיבה האחת שמשלימה את הסבב) מטביע PDF סופי.
+      function isSignerPartialUpdate() {
+        let before = resource.data;
+        let after = request.resource.data;
+        let affected = after.diff(before).affectedKeys();
+        return signedIn()
+          && before.mode == 'multiSign'
+          && affected.hasOnly(['values', 'signerNames', 'rawSignatures', 'status', 'completedAt', 'pdfBase64'])
+          && after.ownerId == before.ownerId && after.templateId == before.templateId && after.mode == before.mode
+          && (
+            (before.status == 'in_progress' && (after.status == 'in_progress' || after.status == 'completing')
+              && !('pdfBase64' in after) && !('completedAt' in after)
+              && additiveMapUpdate(before.values, after.values)
+              && additiveMapUpdate(before.signerNames, after.signerNames)
+              && additiveMapUpdate(before.rawSignatures, after.rawSignatures))
+            ||
+            // pdfBase64 נשאר אופציונלי (כמו במצב single) - אם המסמך הסופי
+            // חורג מהמכסה, ההשלמה עדיין מותרת בלי עותק שמור במערכת;
+            // pdfFieldOk() כבר נבדק על כל ה-update למעלה בכל מקרה.
+            (before.status == 'completing' && after.status == 'completed'
+              && after.values == before.values && after.signerNames == before.signerNames
+              && !('rawSignatures' in after)
+              && after.completedAt == request.time)
+          );
+      }
+
       allow get, list: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);
-      allow create: if signedIn()
-        && request.resource.data.templateId is string
-        && request.resource.data.filledBy is string
-        && request.resource.data.ownerId is string
-        // מוודאים מול הבעלים האמיתי של התבנית - לא סומכים על מה שהממלא
-        // האנונימי מדווח על עצמו, כדי שלא יהיה אפשר "להסתיר" הגשה מהבעלים
-        // האמיתי שלה ע"י שליחת ownerId שגוי.
-        && request.resource.data.ownerId ==
-             get(/databases/$(database)/documents/templates/$(request.resource.data.templateId)).data.ownerId
-        && request.resource.data.createdAt == request.time
-        && pdfFieldOk(request.resource.data);
-      allow update, delete: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);
+      allow create: if signedIn() && pdfFieldOk(request.resource.data) && (
+        (request.resource.data.mode == 'single' && singleCreateAllowed(request.resource.data)) ||
+        (request.resource.data.mode == 'multiSign' && multiSignCreateAllowed(request.resource.data))
+      );
+      allow update: if pdfFieldOk(request.resource.data) && (
+        isAdmin()
+        || (isActiveUser() && resource.data.ownerId == request.auth.uid)
+        || isSignerPartialUpdate()
+      );
+      allow delete: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);
     }
   }
 }
