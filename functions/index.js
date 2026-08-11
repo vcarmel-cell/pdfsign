@@ -8,9 +8,10 @@ admin.initializeApp();
 const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY');
 const ADMIN_EMAIL = 'v.carmel@gmail.com';
 const ALLOWED_ORIGINS = ['https://vcarmel-cell.github.io'];
-// שם המודל עשוי להשתנות/להתיישן עם הזמן - אם הזיהוי מתחיל להיכשל, בדקו
-// שהמודל עדיין קיים ב-ai.google.dev/gemini-api/docs/models.
-const GEMINI_MODEL = 'gemini-2.5-flash';
+// gemini-flash-latest הוא alias שגוגל שומרים מצביע על המודל ה"פלאש" הנוכחי
+// שלהם - נבחר בכוונה במקום שם מודל מוצמד (למשל gemini-2.5-flash), כי שמות
+// מודלים מוצמדים מתיישנים/מפסיקים להיות זמינים עם הזמן (ראינו את זה בפועל).
+const GEMINI_MODEL = 'gemini-flash-latest';
 
 const FIELD_TYPES = ['text', 'number', 'date', 'checkbox', 'signature'];
 
@@ -113,7 +114,10 @@ exports.detectFields = onRequest(
             generationConfig: {
               responseMimeType: 'application/json',
               responseSchema: FIELDS_SCHEMA,
-              temperature: 0.2
+              temperature: 0.2,
+              // מבטל "חשיבה מורחבת" - לא נחוצה למשימת חילוץ מבנית פשוטה כזו,
+              // וללא זה כל קריאה צורכת מאות טוקנים מיותרים (עלות/זמן תגובה).
+              thinkingConfig: { thinkingLevel: 'low' }
             }
           })
         }
