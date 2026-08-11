@@ -193,6 +193,25 @@
         <p id="change-password-success" style="color:#059669; font-size:.85rem;"></p>
       </div>
     </details>
+    <details id="gmail-sender-details" style="display:none; margin-top:1rem;">
+      <summary style="cursor:pointer; color:var(--text-muted); font-size:.85rem;">שליחת הזמנות דרך Gmail - הגדרה</summary>
+      <div class="card" style="max-width:420px;">
+        <p id="gmail-sender-status" style="font-size:.85rem;"></p>
+        <form id="gmail-sender-form" style="flex-direction:column;">
+          <input type="email" id="gmail-sender-email" placeholder="כתובת Gmail שממנה יישלחו ההזמנות" required />
+          <input type="text" id="gmail-sender-app-password" placeholder="App Password (16 תווים)" required minlength="8" />
+          <button type="submit">שמירה</button>
+        </form>
+        <p style="font-size:.75rem; color:var(--text-muted);">
+          נדרש קודם להפעיל אימות דו-שלבי בחשבון ה-Google, ואז ליצור App Password ב-
+          <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>.
+          זו לא הסיסמה הרגילה של Gmail.
+        </p>
+        <p class="error" id="gmail-sender-error"></p>
+        <p id="gmail-sender-success" style="color:#059669; font-size:.85rem;"></p>
+        <button type="button" id="gmail-sender-delete-btn" class="secondary" style="display:none;">הסרת ההגדרה</button>
+      </div>
+    </details>
   </section>
 
   <section id="view-users" class="view">
@@ -224,6 +243,16 @@
     <div class="share-row" id="single-share-row">
       <input type="text" id="share-link-input" readonly />
       <button type="button" id="copy-link-btn">העתק קישור לשיתוף</button>
+      <button type="button" id="bulk-invite-btn" class="secondary" style="display:none;">שליחת הזמנות בקבוצה (Excel)</button>
+    </div>
+    <div id="bulk-invite-panel" class="card" style="display:none;">
+      <p style="font-size:.85rem; color:var(--text-muted);">קובץ Excel עם עמודת שם ועמודת אימייל (עד 100 נמענים בבת אחת). כל הנמענים יקבלו את אותו קישור שיתוף.</p>
+      <input type="file" id="bulk-invite-file" accept=".xlsx,.xls,.csv" />
+      <div id="bulk-invite-preview"></div>
+      <button type="button" id="bulk-invite-send-btn" style="display:none;">שליחה לנמענים המסומנים</button>
+      <p id="bulk-invite-hint" style="font-size:.85rem;"></p>
+      <p class="error" id="bulk-invite-error"></p>
+      <div id="bulk-invite-results"></div>
     </div>
     <div class="share-row" id="multisign-share-row" style="display:none;">
       <button type="button" id="start-round-btn">התחלת סבב חתימות חדש</button>
@@ -317,7 +346,7 @@ function watchOwnUserDoc(uid) {
       return;
     }
     currentUserProfile = doc.data();
-    updateAiDetectButtonVisibility();
+    updatePremiumFeatureVisibility();
   });
 }
 
@@ -518,6 +547,10 @@ async function refreshModeUi() {
   document.getElementById('single-share-row').style.display = isMultiSign ? 'none' : 'flex';
   document.getElementById('multisign-share-row').style.display = isMultiSign ? 'flex' : 'none';
 
+  const bulkInviteEligible = isEligibleForPremiumFeatures() && !isMultiSign && BULK_INVITE_FUNCTION_URL.indexOf('PASTE_') !== 0;
+  document.getElementById('bulk-invite-btn').style.display = bulkInviteEligible ? 'inline-block' : 'none';
+  if (!bulkInviteEligible) document.getElementById('bulk-invite-panel').style.display = 'none';
+
   const active = await hasActiveRound(editorState.template.id);
   toggle.disabled = active;
   toggle.title = active ? 'לא ניתן לשנות בזמן שיש סבב חתימות פעיל על התבנית' : '';
@@ -593,7 +626,7 @@ async function openTemplateEditor(templateId) {
   document.getElementById('share-link-input').value = buildShareLink(templateId);
   document.getElementById('notify-email-input').value = editorState.template.notifyEmail || ADMIN_EMAIL;
 
-  updateAiDetectButtonVisibility();
+  updatePremiumFeatureVisibility();
   await refreshModeUi();
 
   editorState.pdfDocJs = await loadPdfDocument(await getPdfBytes(editorState.template));
@@ -828,14 +861,19 @@ document.getElementById('save-fields-btn').addEventListener('click', async () =>
   }
 });
 
-// ─── זיהוי שדות אוטומטי (AI) ─────────────────────────────
-// מוצג רק למנהל/משתמשי פרימיום, ורק אם AI_DETECT_FUNCTION_URL הוגדר בפועל
-// (ראו README.md) - כל עוד זה נשאר PASTE_... התכונה פשוט לא מוצגת.
-function updateAiDetectButtonVisibility() {
-  const btn = document.getElementById('ai-detect-btn');
-  if (!btn) return;
-  const eligible = currentRole === 'admin' || (currentUserProfile && currentUserProfile.tier === 'premium');
-  btn.style.display = (eligible && AI_DETECT_FUNCTION_URL.indexOf('PASTE_') !== 0) ? 'inline-block' : 'none';
+// ─── תכונות פרימיום (זיהוי שדות AI + שליחת הזמנות בקבוצה) ────────────
+// שתי התכונות מוצגות רק למנהל/משתמשי פרימיום, וכל אחת רק אם ה-Cloud
+// Function שלה כבר הוגדר בפועל (ראו README.md) - כל עוד נשאר PASTE_...
+// התכונה המתאימה פשוט לא מוצגת.
+function isEligibleForPremiumFeatures() {
+  return currentRole === 'admin' || (currentUserProfile && currentUserProfile.tier === 'premium');
+}
+
+function updatePremiumFeatureVisibility() {
+  const aiBtn = document.getElementById('ai-detect-btn');
+  if (aiBtn) aiBtn.style.display = (isEligibleForPremiumFeatures() && AI_DETECT_FUNCTION_URL.indexOf('PASTE_') !== 0) ? 'inline-block' : 'none';
+  const gmailDetails = document.getElementById('gmail-sender-details');
+  if (gmailDetails) gmailDetails.style.display = isEligibleForPremiumFeatures() ? 'block' : 'none';
 }
 
 document.getElementById('ai-detect-btn').addEventListener('click', async () => {
@@ -903,6 +941,134 @@ document.getElementById('copy-link-btn').addEventListener('click', () => {
   input.select();
   navigator.clipboard.writeText(input.value).catch(() => {});
   alert('הקישור הועתק');
+});
+
+// ─── שליחת הזמנות בקבוצה (Excel -> Gmail) ─────────────────────────────
+const BULK_INVITE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const BULK_INVITE_MAX_RECIPIENTS = 100;
+let bulkInviteRecipients = [];
+
+document.getElementById('bulk-invite-btn').addEventListener('click', () => {
+  const panel = document.getElementById('bulk-invite-panel');
+  panel.style.display = (panel.style.display === 'none') ? 'block' : 'none';
+});
+
+function guessBulkInviteColumns(headerRow) {
+  const nameRe = /^(name|שם|שם מלא|full ?name)$/i;
+  const emailRe = /^(email|e-?mail|מייל|אימייל|דוא"?ל)$/i;
+  let nameIdx = -1, emailIdx = -1;
+  (headerRow || []).forEach((cell, i) => {
+    const v = String(cell || '').trim();
+    if (nameRe.test(v)) nameIdx = i;
+    if (emailRe.test(v)) emailIdx = i;
+  });
+  return { nameIdx, emailIdx };
+}
+
+function renderBulkInvitePreview() {
+  const container = document.getElementById('bulk-invite-preview');
+  container.innerHTML = '';
+  bulkInviteRecipients.forEach((r, i) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; align-items:center; gap:.5rem; padding:.2rem 0; font-size:.85rem;';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = r.valid && i < BULK_INVITE_MAX_RECIPIENTS;
+    checkbox.disabled = !r.valid || i >= BULK_INVITE_MAX_RECIPIENTS;
+    checkbox.addEventListener('change', () => { r.selected = checkbox.checked; });
+    r.selected = checkbox.checked;
+    const label = document.createElement('span');
+    label.textContent = (r.name || '(ללא שם)') + ' - ' + (r.email || '(ללא אימייל)') +
+      (!r.valid ? ' - אימייל לא תקין' : (i >= BULK_INVITE_MAX_RECIPIENTS ? ' - חורג מהמכסה' : ''));
+    if (!r.valid || i >= BULK_INVITE_MAX_RECIPIENTS) label.style.color = 'var(--danger)';
+    row.appendChild(checkbox);
+    row.appendChild(label);
+    container.appendChild(row);
+  });
+  document.getElementById('bulk-invite-send-btn').style.display = bulkInviteRecipients.length ? 'inline-block' : 'none';
+}
+
+document.getElementById('bulk-invite-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  const errorEl = document.getElementById('bulk-invite-error');
+  const resultsEl = document.getElementById('bulk-invite-results');
+  errorEl.textContent = ''; resultsEl.innerHTML = ''; bulkInviteRecipients = [];
+  if (!file) return;
+  try {
+    if (typeof XLSX === 'undefined') await loadScripts([SHEETJS_SCRIPT_URL]);
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    if (!rows.length) { errorEl.textContent = 'הקובץ ריק.'; return; }
+
+    const { nameIdx, emailIdx } = guessBulkInviteColumns(rows[0]);
+    let dataRows, nameCol, emailCol;
+    if (nameIdx !== -1 && emailIdx !== -1) {
+      dataRows = rows.slice(1); nameCol = nameIdx; emailCol = emailIdx;
+    } else {
+      // אין כותרות מזוהות - נניח עמודה A = שם, עמודה B = אימייל. אם השורה
+      // הראשונה עצמה נראית כמו אימייל תקין, זו כבר שורת נתונים ולא כותרת.
+      nameCol = 0; emailCol = 1;
+      const firstLooksLikeData = BULK_INVITE_EMAIL_RE.test(String((rows[0] || [])[1] || '').trim());
+      dataRows = firstLooksLikeData ? rows : rows.slice(1);
+    }
+
+    bulkInviteRecipients = dataRows
+      .filter(r => r && (r[nameCol] || r[emailCol]))
+      .map(r => {
+        const email = String(r[emailCol] || '').trim();
+        return { name: String(r[nameCol] || '').trim(), email: email, valid: BULK_INVITE_EMAIL_RE.test(email) };
+      });
+
+    if (!bulkInviteRecipients.length) { errorEl.textContent = 'לא נמצאו נמענים בקובץ.'; return; }
+    renderBulkInvitePreview();
+  } catch (err) {
+    errorEl.textContent = 'שגיאה בקריאת הקובץ: ' + err.message;
+  }
+});
+
+document.getElementById('bulk-invite-send-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('bulk-invite-send-btn');
+  const hint = document.getElementById('bulk-invite-hint');
+  const errorEl = document.getElementById('bulk-invite-error');
+  const resultsEl = document.getElementById('bulk-invite-results');
+  errorEl.textContent = ''; resultsEl.innerHTML = '';
+
+  const selected = bulkInviteRecipients.filter(r => r.selected && r.valid);
+  if (!selected.length) { errorEl.textContent = 'לא נבחרו נמענים תקינים לשליחה.'; return; }
+
+  btn.disabled = true;
+  hint.textContent = 'שולח... אנא המתינו (עשוי לקחת מספר דקות לרשימה גדולה).';
+  try {
+    const idToken = await currentUser.getIdToken();
+    const res = await fetch(BULK_INVITE_FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+      body: JSON.stringify({
+        templateId: editorState.template.id,
+        recipients: selected.map(r => ({ name: r.name, email: r.email }))
+      })
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || ('שגיאת שרת (' + res.status + ')'));
+
+    hint.textContent = '';
+    const summary = document.createElement('p');
+    summary.textContent = 'נשלחו ' + body.sent + ' מתוך ' + (body.sent + body.failed) + '.';
+    resultsEl.appendChild(summary);
+    (body.results || []).filter(r => !r.ok).forEach(r => {
+      const p = document.createElement('p');
+      p.className = 'error';
+      p.textContent = 'נכשל: ' + r.email;
+      resultsEl.appendChild(p);
+    });
+  } catch (err) {
+    hint.textContent = '';
+    errorEl.textContent = 'שגיאה בשליחת ההזמנות: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 document.getElementById('save-notify-btn').addEventListener('click', async () => {
@@ -1229,6 +1395,61 @@ document.getElementById('change-password-form').addEventListener('submit', async
   }
 });
 
+// ─── הגדרת שליחה דרך Gmail (לתכונת "הזמנות בקבוצה") ──────────────────
+async function refreshGmailSenderStatus() {
+  const statusEl = document.getElementById('gmail-sender-status');
+  const deleteBtn = document.getElementById('gmail-sender-delete-btn');
+  try {
+    const doc = await db.collection('gmailSenders').doc(currentUser.uid).get();
+    if (doc.exists) {
+      statusEl.textContent = 'מוגדר: ' + doc.data().email;
+      deleteBtn.style.display = 'inline-block';
+    } else {
+      statusEl.textContent = 'לא מוגדר עדיין.';
+      deleteBtn.style.display = 'none';
+    }
+  } catch (err) {
+    statusEl.textContent = '';
+  }
+}
+
+document.getElementById('gmail-sender-details').addEventListener('toggle', (e) => {
+  if (e.target.open) refreshGmailSenderStatus();
+});
+
+document.getElementById('gmail-sender-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('gmail-sender-email').value.trim();
+  const appPassword = document.getElementById('gmail-sender-app-password').value.replace(/\s+/g, '');
+  const errorEl = document.getElementById('gmail-sender-error');
+  const successEl = document.getElementById('gmail-sender-success');
+  errorEl.textContent = ''; successEl.textContent = '';
+  try {
+    await db.collection('gmailSenders').doc(currentUser.uid).set({
+      uid: currentUser.uid,
+      email: email,
+      appPassword: appPassword,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: currentUser.uid
+    });
+    successEl.textContent = 'הפרטים נשמרו.';
+    e.target.reset();
+    await refreshGmailSenderStatus();
+  } catch (err) {
+    errorEl.textContent = 'שגיאה בשמירה: ' + err.message;
+  }
+});
+
+document.getElementById('gmail-sender-delete-btn').addEventListener('click', async () => {
+  if (!confirm('להסיר את הגדרת השליחה דרך Gmail?')) return;
+  try {
+    await db.collection('gmailSenders').doc(currentUser.uid).delete();
+    await refreshGmailSenderStatus();
+  } catch (err) {
+    alert('שגיאה בהסרה: ' + err.message);
+  }
+});
+
 // ─── אתחול ───────────────────────────────────────────────
 async function init() {
   await loadScripts(FIREBASE_SDK_URLS);
@@ -1261,7 +1482,7 @@ async function init() {
 
     document.getElementById('current-user-email').textContent = user.email;
     document.getElementById('nav-users-btn').style.display = (currentRole === 'admin') ? 'inline-block' : 'none';
-    updateAiDetectButtonVisibility();
+    updatePremiumFeatureVisibility();
     showView('templates');
     loadTemplatesList();
   });

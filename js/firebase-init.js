@@ -21,6 +21,13 @@ const ADMIN_EMAIL = "v.carmel@gmail.com";
 // PASTE_... הכפתור המתאים ב-admin.html פשוט לא מוצג.
 const AI_DETECT_FUNCTION_URL = "https://us-central1-pdfsign-b5230.cloudfunctions.net/detectFields";
 
+// כתובת ה-Cloud Function "sendBulkInvites" (שליחת הזמנות בקבוצה דרך Gmail) -
+// אותה שיטה בדיוק כמו AI_DETECT_FUNCTION_URL למעלה.
+const BULK_INVITE_FUNCTION_URL = "https://us-central1-pdfsign-b5230.cloudfunctions.net/sendBulkInvites";
+
+// ספריית קריאת קבצי Excel (SheetJS) - לפיצ'ר שליחת הזמנות בקבוצה.
+const SHEETJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+
 // ─── טעינת ספריות חיצוניות (CDN, בזו אחר זו) ─────────────────────
 function loadScripts(urls) {
   return new Promise((resolve, reject) => {

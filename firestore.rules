@@ -55,6 +55,23 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // אישורי Gmail (App Password) לשליחת הזמנות בקבוצה - בכוונה לא בתוך
+    // users/{userId} (שם ה-get פתוח לכל מחובר, כולל ממלאים אנונימיים, לצורך
+    // בדיקת submissionCount) - כאן ה-get מוגבל לבעלים/מנהל בלבד.
+    match /gmailSenders/{uid} {
+      allow get: if isAdmin() || request.auth.uid == uid;
+      allow create, update: if (isAdmin() || request.auth.uid == uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.email is string
+        && request.resource.data.email.matches('^[^@\\s]+@[^@\\s]+[.][^@\\s]+$')
+        && request.resource.data.appPassword is string
+        && request.resource.data.appPassword.size() >= 8
+        && request.resource.data.appPassword.size() <= 64
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if isAdmin() || request.auth.uid == uid;
+    }
+
     match /templates/{templateId} {
       allow get: if signedIn();
       allow list: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);

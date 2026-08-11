@@ -2,6 +2,7 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
+const nodemailer = require('nodemailer');
 
 admin.initializeApp();
 
@@ -155,5 +156,149 @@ exports.detectFields = onRequest(
     if (!Array.isArray(fields)) { res.status(502).json({ error: 'תוצאת AI בפורמט לא צפוי' }); return; }
 
     res.status(200).json({ fields });
+  }
+);
+
+// ─── שליחת הזמנות בקבוצה (Excel -> Gmail) ─────────────────────────────
+// כתובת בסיס לבניית קישור השיתוף - אין כאן location.href כמו בצד לקוח,
+// ולכן קבוע מוצמד. חייב להתאים בדיוק לנתיב שבו האתר הסטטי מתפרסם בפועל.
+const APP_BASE_URL = 'https://vcarmel-cell.github.io/pdfsign/';
+const MAX_RECIPIENTS = 100;
+const SEND_DELAY_MS = 1000;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+exports.sendBulkInvites = onRequest(
+  {
+    region: 'us-central1',
+    cors: ALLOWED_ORIGINS,
+    timeoutSeconds: 300,
+    memory: '256MiB'
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
+
+    const m = (req.headers.authorization || '').match(/^Bearer (.+)$/);
+    if (!m) { res.status(401).json({ error: 'חסר טוקן הזדהות' }); return; }
+    let decoded;
+    try {
+      decoded = await admin.auth().verifyIdToken(m[1]);
+    } catch (err) {
+      res.status(401).json({ error: 'טוקן הזדהות לא תקין' });
+      return;
+    }
+
+    let authorized = decoded.email === ADMIN_EMAIL;
+    if (!authorized) {
+      try {
+        const snap = await admin.firestore().collection('users').doc(decoded.uid).get();
+        const data = snap.exists ? snap.data() : null;
+        authorized = !!data && data.active === true && data.tier === 'premium';
+      } catch (err) {
+        logger.error('Firestore auth check failed', err);
+        res.status(403).json({ error: 'אין הרשאה' });
+        return;
+      }
+    }
+    if (!authorized) { res.status(403).json({ error: 'אין הרשאה לתכונה זו' }); return; }
+
+    const templateId = req.body && req.body.templateId;
+    const recipients = req.body && req.body.recipients;
+    if (typeof templateId !== 'string' || !templateId) {
+      res.status(400).json({ error: 'קלט לא תקין (templateId)' });
+      return;
+    }
+    if (!Array.isArray(recipients) || !recipients.length) {
+      res.status(400).json({ error: 'רשימת נמענים ריקה' });
+      return;
+    }
+    if (recipients.length > MAX_RECIPIENTS) {
+      res.status(400).json({ error: 'יותר מדי נמענים (מקסימום ' + MAX_RECIPIENTS + ' בבת אחת)' });
+      return;
+    }
+    for (const r of recipients) {
+      if (!r || typeof r.email !== 'string' || !EMAIL_RE.test(r.email.trim())) {
+        res.status(400).json({ error: 'כתובת מייל לא תקינה: ' + (r && r.email) });
+        return;
+      }
+    }
+
+    let templateSnap;
+    try {
+      templateSnap = await admin.firestore().collection('templates').doc(templateId).get();
+    } catch (err) {
+      logger.error('Template lookup failed', err);
+      res.status(500).json({ error: 'שגיאה בטעינת התבנית' });
+      return;
+    }
+    if (!templateSnap.exists) { res.status(404).json({ error: 'התבנית לא נמצאה' }); return; }
+    const template = templateSnap.data();
+    if (decoded.email !== ADMIN_EMAIL && template.ownerId !== decoded.uid) {
+      res.status(403).json({ error: 'אין הרשאה לתבנית זו' });
+      return;
+    }
+    if ((template.mode || 'single') === 'multiSign') {
+      res.status(400).json({ error: 'שליחת הזמנות בקבוצה זמינה רק לתבניות במצב חתימה יחידה' });
+      return;
+    }
+
+    let senderSnap;
+    try {
+      senderSnap = await admin.firestore().collection('gmailSenders').doc(decoded.uid).get();
+    } catch (err) {
+      logger.error('Sender lookup failed', err);
+      res.status(500).json({ error: 'שגיאה בטעינת הגדרות השולח' });
+      return;
+    }
+    if (!senderSnap.exists) {
+      res.status(400).json({ error: 'יש להגדיר קודם שליחה דרך Gmail (בעמוד התבניות)' });
+      return;
+    }
+    const sender = senderSnap.data();
+    if (!sender.email || !sender.appPassword) {
+      res.status(400).json({ error: 'הגדרות Gmail חסרות - יש להגדיר מחדש' });
+      return;
+    }
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: sender.email, pass: sender.appPassword }
+    });
+    try {
+      await transporter.verify();
+    } catch (err) {
+      logger.error('SMTP verify failed', err);
+      res.status(502).json({
+        error: 'לא ניתן להתחבר לחשבון ה-Gmail. בדקו שהסיסמה שהוזנה היא App Password ' +
+          '(16 תווים, מ-myaccount.google.com/apppasswords) ולא סיסמת Gmail הרגילה, ' +
+          'ושהאימות הדו-שלבי מופעל בחשבון.'
+      });
+      return;
+    }
+
+    const shareLink = APP_BASE_URL + 'fill.html?id=' + encodeURIComponent(templateId);
+    const templateName = template.name || 'טופס';
+    const results = [];
+    for (const r of recipients) {
+      const email = r.email.trim();
+      const name = (r.name || '').trim();
+      try {
+        await transporter.sendMail({
+          from: sender.email,
+          to: email,
+          subject: 'הזמנה למילוי טופס: ' + templateName,
+          text: (name ? 'שלום ' + name + ',\n\n' : 'שלום,\n\n') +
+            'הוזמנת למלא ולחתום על הטופס "' + templateName + '".\n' +
+            'לחצו על הקישור הבא כדי למלא:\n' + shareLink
+        });
+        results.push({ email: email, ok: true });
+      } catch (err) {
+        logger.error('Send failed', email, err);
+        results.push({ email: email, ok: false, error: 'שגיאת שליחה' });
+      }
+      await new Promise(resolve => setTimeout(resolve, SEND_DELAY_MS));
+    }
+
+    const sent = results.filter(r => r.ok).length;
+    res.status(200).json({ sent: sent, failed: results.length - sent, results: results });
   }
 );
