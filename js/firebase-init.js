@@ -16,6 +16,11 @@ const EMAILJS_CONFIG = {
 
 const ADMIN_EMAIL = "v.carmel@gmail.com";
 
+// כתובת ה-Cloud Function "detectFields" (זיהוי שדות אוטומטי ב-AI) - מתקבלת
+// אחרי `firebase deploy --only functions`, ראו README.md. כל עוד זה נשאר
+// PASTE_... הכפתור המתאים ב-admin.html פשוט לא מוצג.
+const AI_DETECT_FUNCTION_URL = "PASTE_AI_DETECT_FUNCTION_URL";
+
 // ─── טעינת ספריות חיצוניות (CDN, בזו אחר זו) ─────────────────────
 function loadScripts(urls) {
   return new Promise((resolve, reject) => {

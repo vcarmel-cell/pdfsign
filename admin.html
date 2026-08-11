@@ -245,6 +245,7 @@
         <button type="button" class="tool-btn" data-type="date">+ תאריך</button>
         <button type="button" class="tool-btn" data-type="checkbox">+ תיבת סימון</button>
         <button type="button" class="tool-btn" data-type="signature">+ חתימה</button>
+        <button type="button" id="ai-detect-btn" class="secondary" style="display:none;">זיהוי שדות אוטומטי (AI)</button>
         <button type="button" id="save-fields-btn">שמירת שדות</button>
         <div id="editor-hint">
           בחרו סוג שדה מהתפריט, ואז גררו מלבן על גבי המסמך כדי למקם אותו במקום הרצוי (לחיצה בודדת תמקם שדה בגודל ברירת מחדל). ניתן לגרור שדה קיים באמצעות הידית ⠿, ולשנות את גודלו מהפינה.
@@ -313,7 +314,10 @@ function watchOwnUserDoc(uid) {
       if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
       await auth.signOut();
       showView('unauthorized');
+      return;
     }
+    currentUserProfile = doc.data();
+    updateAiDetectButtonVisibility();
   });
 }
 
@@ -589,6 +593,7 @@ async function openTemplateEditor(templateId) {
   document.getElementById('share-link-input').value = buildShareLink(templateId);
   document.getElementById('notify-email-input').value = editorState.template.notifyEmail || ADMIN_EMAIL;
 
+  updateAiDetectButtonVisibility();
   await refreshModeUi();
 
   editorState.pdfDocJs = await loadPdfDocument(await getPdfBytes(editorState.template));
@@ -820,6 +825,76 @@ document.getElementById('save-fields-btn').addEventListener('click', async () =>
     alert('השדות נשמרו בהצלחה');
   } catch (err) {
     alert('שגיאה בשמירה: ' + err.message);
+  }
+});
+
+// ─── זיהוי שדות אוטומטי (AI) ─────────────────────────────
+// מוצג רק למנהל/משתמשי פרימיום, ורק אם AI_DETECT_FUNCTION_URL הוגדר בפועל
+// (ראו README.md) - כל עוד זה נשאר PASTE_... התכונה פשוט לא מוצגת.
+function updateAiDetectButtonVisibility() {
+  const btn = document.getElementById('ai-detect-btn');
+  if (!btn) return;
+  const eligible = currentRole === 'admin' || (currentUserProfile && currentUserProfile.tier === 'premium');
+  btn.style.display = (eligible && AI_DETECT_FUNCTION_URL.indexOf('PASTE_') !== 0) ? 'inline-block' : 'none';
+}
+
+document.getElementById('ai-detect-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('ai-detect-btn');
+  const hint = document.getElementById('editor-hint');
+  btn.disabled = true;
+  hint.classList.remove('error');
+  hint.textContent = 'מזהה שדות אוטומטית באמצעות AI... (עשוי לקחת כמה שניות)';
+  try {
+    const pages = [];
+    for (let i = 0; i < editorState.template.pageCount; i++) {
+      const wrapper = document.getElementById('page-wrap-' + i);
+      const canvas = wrapper && wrapper.querySelector('canvas');
+      if (!canvas) continue;
+      pages.push({ page: i, imageBase64: canvas.toDataURL('image/png').split(',')[1] });
+    }
+    if (!pages.length) throw new Error('לא נמצאו עמודים מרונדרים');
+
+    const idToken = await currentUser.getIdToken();
+    const res = await fetch(AI_DETECT_FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+      body: JSON.stringify({ pages })
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || ('שגיאת שרת (' + res.status + ')'));
+    }
+    const responseBody = await res.json();
+    const detected = responseBody.fields;
+    if (!Array.isArray(detected) || !detected.length) {
+      hint.textContent = 'לא זוהו שדות. אפשר להוסיף שדות ידנית.';
+      return;
+    }
+
+    const allowedTypes = Object.keys(FIELD_TYPE_LABELS);
+    const affectedPages = new Set();
+    detected.forEach(d => {
+      const page = Number.isInteger(d.page) ? clamp(d.page, 0, editorState.template.pageCount - 1) : 0;
+      const type = allowedTypes.indexOf(d.type) !== -1 ? d.type : 'text';
+      const xPct = clamp(Number(d.xPct) || 0, 0, 1);
+      const yPct = clamp(Number(d.yPct) || 0, 0, 1);
+      const wPct = clamp(Number(d.wPct) || 0.12, 0.01, 1 - xPct);
+      const hPct = clamp(Number(d.hPct) || 0.03, 0.01, 1 - yPct);
+      const label = (typeof d.label === 'string' && d.label.trim())
+        ? d.label.trim() : (FIELD_TYPE_LABELS[type] + ' ' + (editorState.fields.length + 1));
+      editorState.fields.push({
+        id: newId(), type: type, page: page, xPct: xPct, yPct: yPct, wPct: wPct, hPct: hPct,
+        label: label, fontSize: 12, required: type === 'signature'
+      });
+      affectedPages.add(page);
+    });
+    affectedPages.forEach(p => renderFieldsForPage(p));
+    hint.textContent = 'זוהו ' + detected.length + ' שדות. בדקו/התאימו ואז לחצו "שמירת שדות".';
+  } catch (err) {
+    hint.textContent = 'שגיאה בזיהוי אוטומטי: ' + err.message;
+    hint.classList.add('error');
+  } finally {
+    btn.disabled = false;
   }
 });
 
@@ -1076,10 +1151,13 @@ function renderUsersList(users) {
     row.innerHTML =
       '<div class="u-main">' +
         '<strong>' + escapeHtml(u.email) + '</strong>' +
-        '<span class="u-meta">נוצר: ' + escapeHtml(date) + ' · ' + (u.active !== false ? 'פעיל' : 'גישה בוטלה') + '</span>' +
+        '<span class="u-meta">נוצר: ' + escapeHtml(date) + ' · ' + (u.active !== false ? 'פעיל' : 'גישה בוטלה') +
+          ' · ' + (u.tier === 'premium' ? 'פרימיום' : 'רגיל') + '</span>' +
       '</div>' +
-      '<button type="button" class="u-toggle ' + (u.active !== false ? 'danger' : '') + '">' + (u.active !== false ? 'בטל גישה' : 'הפעל מחדש') + '</button>';
+      '<button type="button" class="u-toggle ' + (u.active !== false ? 'danger' : '') + '">' + (u.active !== false ? 'בטל גישה' : 'הפעל מחדש') + '</button>' +
+      '<button type="button" class="u-tier-toggle">' + (u.tier === 'premium' ? 'הסר פרימיום' : 'הפוך לפרימיום') + '</button>';
     row.querySelector('.u-toggle').addEventListener('click', () => setUserActive(u.id, u.active === false));
+    row.querySelector('.u-tier-toggle').addEventListener('click', () => setUserTier(u.id, u.tier === 'premium' ? 'regular' : 'premium'));
     list.appendChild(row);
   });
 }
@@ -1087,6 +1165,16 @@ function renderUsersList(users) {
 async function setUserActive(uid, active) {
   try {
     await db.collection('users').doc(uid).update({ active });
+    await loadUsersList();
+  } catch (err) {
+    alert('שגיאה בעדכון המשתמש: ' + err.message);
+  }
+}
+
+// גישה ל"זיהוי שדות אוטומטי (AI)" - דגל ידני בלבד שהמנהל קובע, לא מנוי/תשלום.
+async function setUserTier(uid, tier) {
+  try {
+    await db.collection('users').doc(uid).update({ tier });
     await loadUsersList();
   } catch (err) {
     alert('שגיאה בעדכון המשתמש: ' + err.message);
@@ -1173,6 +1261,7 @@ async function init() {
 
     document.getElementById('current-user-email').textContent = user.email;
     document.getElementById('nav-users-btn').style.display = (currentRole === 'admin') ? 'inline-block' : 'none';
+    updateAiDetectButtonVisibility();
     showView('templates');
     loadTemplatesList();
   });

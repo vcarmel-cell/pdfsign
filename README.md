@@ -41,7 +41,20 @@ Project settings → General → Your apps → הוסיפו אפליקציית W
 
 אם משאירים את `EMAILJS_CONFIG.publicKey` כ-`PASTE_...`, האפליקציה תמשיך לעבוד רגיל (הגשות נשמרות כרגיל ב-Firestore) — רק שליחת המייל תדולג בשקט.
 
-### 6. בדיקה מקצה לקצה
+### 6. זיהוי שדות אוטומטי (AI) — Gemini + Cloud Function
+תכונה אופציונלית: זיהוי אוטומטי של שדות למילוי בתבנית PDF, ע"י מודל Gemini (Google) שמנתח את תמונות העמודים ומציע שדות טיוטה (שעדיין ניתנים לעריכה/מחיקה לפני שמירה). זו הפעם הראשונה שהאפליקציה משתמשת ברכיב שרת (Cloud Function) — כי מפתח ה-API של Gemini חייב להישאר בצד שרת ולא להיחשף בקוד הלקוח.
+
+1. קבלו מפתח Gemini API בחינם (בלי כרטיס אשראי) ב-[aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey).
+2. התקינו Firebase CLI אם עוד לא מותקן (`npm install -g firebase-tools`), ומהתיקייה הראשית של הפרויקט (`PDFSign/`) התחברו: `firebase login`.
+3. ודאו שהפרויקט הנכון נבחר (`.firebaserc` כבר מצביע על `pdfsign-b5230`; `firebase use pdfsign-b5230` אם צריך).
+4. שמרו את מפתח ה-API ב-Secret Manager: `firebase functions:secrets:set GEMINI_API_KEY` (יבקש להדביק את המפתח).
+5. פרסו את הפונקציה: `firebase deploy --only functions`.
+6. בסוף הפריסה יודפס URL של הפונקציה (למשל `https://us-central1-pdfsign-b5230.cloudfunctions.net/detectFields`) — העתיקו אותו לתוך `js/firebase-init.js`, בקבוע `AI_DETECT_FUNCTION_URL`, במקום `PASTE_...`.
+7. מתן גישה למשתמש: במסך "ניהול משתמשים" לחצו "הפוך לפרימיום" ליד המשתמש הרצוי — רק מנהל ומשתמשי פרימיום רואים את כפתור "זיהוי שדות אוטומטי (AI)" בעורך השדות. זה דגל ידני בלבד שהמנהל קובע — אין חיוב/מנוי בפועל.
+
+התכונה כולה אופציונלית: אם `AI_DETECT_FUNCTION_URL` נשאר `PASTE_...`, הכפתור פשוט לא מוצג, ושאר האפליקציה ממשיכה לעבוד רגיל. **חשוב:** אם מפתח ה-API מתחלף בעתיד (`functions:secrets:set` שוב), צריך גם לפרוס מחדש (`firebase deploy --only functions`) כדי שהפונקציה תשתמש בערך החדש — עדכון הסוד לבדו לא מספיק.
+
+### 7. בדיקה מקצה לקצה
 1. פתחו את `admin.html`, התחברו.
 2. העלו PDF קטן לדוגמה (מתחת ל-3MB), תנו לו שם.
 3. בעורך השדות: בחרו סוג שדה (טקסט/תאריך/תיבת סימון/חתימה) וגררו מלבן על המסמך במקום הרצוי. שמרו שדות.
