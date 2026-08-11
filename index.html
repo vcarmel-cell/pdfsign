@@ -2,10 +2,383 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="refresh" content="0; url=admin.html" />
-<title>PDFSign</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PDFSign — טפסים דיגיטליים עם חתימה אמיתית</title>
+<meta name="description" content="מעלים טופס PDF, מסמנים איפה למלא, שולחים קישור. הלקוחות ממלאים וחותמים מהטלפון או מהמחשב - בלי נייר, בלי סריקות, בלי הדפסות." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;500;700;900&family=Assistant:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --paper: #eef1ef;
+    --paper-raised: #ffffff;
+    --ink: #1c232b;
+    --ink-soft: #57616b;
+    --ink-faint: #8b9299;
+    --stamp: #a4321f;
+    --stamp-ink: #8a2a19;
+    --line: #cfd3c8;
+    --radius: 3px;
+    --shadow: 0 1px 2px rgba(28,35,43,.06), 0 8px 24px -12px rgba(28,35,43,.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #14181a;
+      --paper-raised: #1b2123;
+      --ink: #ece8dc;
+      --ink-soft: #a8afa6;
+      --ink-faint: #767d75;
+      --stamp: #db6b4e;
+      --stamp-ink: #db6b4e;
+      --line: #333a3b;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #14181a; --paper-raised: #1b2123; --ink: #ece8dc; --ink-soft: #a8afa6;
+    --ink-faint: #767d75; --stamp: #db6b4e; --stamp-ink: #db6b4e; --line: #333a3b;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+  :root[data-theme="light"] {
+    --paper: #eef1ef; --paper-raised: #ffffff; --ink: #1c232b; --ink-soft: #57616b;
+    --ink-faint: #8b9299; --stamp: #a4321f; --stamp-ink: #8a2a19; --line: #cfd3c8;
+    --shadow: 0 1px 2px rgba(28,35,43,.06), 0 8px 24px -12px rgba(28,35,43,.18);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Assistant", -apple-system, "Segoe UI", Arial, sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+  h1, h2, h3 { font-family: "Frank Ruhl Libre", "David Libre", serif; font-weight: 700; text-wrap: balance; margin: 0; }
+  a { color: inherit; }
+  img, canvas, svg { display: block; max-width: 100%; }
+  ::selection { background: var(--stamp); color: #fff; }
+  :focus-visible { outline: 2px solid var(--stamp); outline-offset: 3px; }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 1.5rem; }
+
+  /* ── header ── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1.4rem 0;
+  }
+  .wordmark { display: flex; align-items: baseline; gap: .5rem; font-family: "Frank Ruhl Libre", serif; font-size: 1.35rem; font-weight: 700; letter-spacing: .01em; }
+  .wordmark .dot { color: var(--stamp); }
+  .nav-cta {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .55rem 1.1rem; border: 1px solid var(--line); border-radius: var(--radius);
+    font-size: .92rem; font-weight: 600; text-decoration: none; color: var(--ink);
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .nav-cta:hover { border-color: var(--stamp); background: color-mix(in srgb, var(--stamp) 8%, transparent); }
+
+  /* ── hero ── */
+  .hero { padding: 3.5rem 0 4rem; }
+  .hero-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 3rem; align-items: center; }
+  @media (max-width: 780px) { .hero-grid { grid-template-columns: 1fr; gap: 2.5rem; } }
+
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: .5rem;
+    font-size: .82rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--stamp-ink); margin-bottom: 1.1rem;
+  }
+  .eyebrow::before { content: ""; width: 1.4rem; height: 1px; background: var(--stamp); }
+
+  .hero h1 { font-size: clamp(2.2rem, 5vw, 3.3rem); line-height: 1.15; }
+  .hero h1 em { font-style: normal; color: var(--stamp-ink); }
+  .hero p.lede { font-size: 1.15rem; color: var(--ink-soft); max-width: 34rem; margin: 1.3rem 0 2rem; }
+
+  .cta-row { display: flex; gap: .9rem; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: .5rem;
+    padding: .85rem 1.5rem; border-radius: var(--radius); font-size: 1rem; font-weight: 700;
+    text-decoration: none; border: 1px solid transparent; cursor: pointer;
+    transition: transform .12s ease, box-shadow .12s ease, background .15s ease;
+  }
+  .btn-primary { background: var(--stamp); color: #fdf9f3; box-shadow: var(--shadow); }
+  .btn-primary:hover { transform: translateY(-1px); background: var(--stamp-ink); }
+  .btn-ghost { border-color: var(--line); color: var(--ink); }
+  .btn-ghost:hover { border-color: var(--stamp); }
+
+  /* signature stroke canvas card */
+  .sig-card {
+    background: var(--paper-raised); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 1.6rem 1.6rem 0;
+    position: relative;
+  }
+  .sig-card .field-line { display: flex; justify-content: space-between; font-size: .78rem; color: var(--ink-faint); letter-spacing: .03em; margin-bottom: .3rem; }
+  .sig-canvas-wrap { border-top: 1px dashed var(--line); padding-top: .2rem; }
+  #sigSvg { width: 100%; height: 110px; }
+  #sigPath { fill: none; stroke: var(--stamp-ink); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  @media (prefers-reduced-motion: no-preference) {
+    #sigPath { transition: stroke-dashoffset 1.4s ease; }
+  }
+  .sig-card .perforation {
+    height: 14px; margin-top: 1rem;
+    background-image: radial-gradient(circle at 50% 0, var(--paper) 3px, transparent 3.5px);
+    background-size: 16px 14px; background-repeat: repeat-x; background-position-y: -7px;
+  }
+
+  /* ── section shell ── */
+  section.block { padding: 3.4rem 0; border-top: 1px solid var(--line); }
+  .section-head { max-width: 38rem; margin-bottom: 2.4rem; }
+  .section-head .eyebrow { margin-bottom: .6rem; }
+  .section-head h2 { font-size: clamp(1.6rem, 3vw, 2.1rem); }
+  .section-head p { color: var(--ink-soft); margin-top: .7rem; }
+
+  /* ── how it works ── */
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.6rem; }
+  @media (max-width: 900px) { .steps { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 520px) { .steps { grid-template-columns: 1fr; } }
+  .step { border-top: 2px solid var(--line); padding-top: .9rem; }
+  .step .num { font-family: "Frank Ruhl Libre", serif; font-size: 1.6rem; color: var(--stamp-ink); display: block; margin-bottom: .5rem; font-variant-numeric: tabular-nums; }
+  .step h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: .4rem; }
+  .step p { color: var(--ink-soft); font-size: .93rem; margin: 0; }
+
+  /* ── feature "form fields" grid ── */
+  .fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  @media (max-width: 720px) { .fields { grid-template-columns: 1fr; } }
+  .field {
+    background: var(--paper-raised); padding: 1.5rem 1.6rem;
+    transition: background .15s ease;
+  }
+  .field:hover { background: color-mix(in srgb, var(--stamp) 5%, var(--paper-raised)); }
+  .field .label {
+    font-size: .76rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--stamp-ink); margin-bottom: .55rem; display: block;
+  }
+  .field h3 { font-size: 1.12rem; margin-bottom: .4rem; }
+  .field p { color: var(--ink-soft); font-size: .93rem; margin: 0; }
+  .field .tag {
+    display: inline-block; margin-top: .6rem; font-size: .74rem; font-weight: 700;
+    padding: .18rem .55rem; border: 1px solid var(--stamp); color: var(--stamp-ink); border-radius: 999px;
+  }
+
+  /* ── honesty / trust strip ── */
+  .trust { display: flex; gap: 2.4rem; flex-wrap: wrap; }
+  .trust-item { flex: 1 1 220px; }
+  .trust-item h3 { font-size: 1rem; margin-bottom: .35rem; }
+  .trust-item p { color: var(--ink-soft); font-size: .9rem; margin: 0; }
+
+  /* ── closing cta ── */
+  .closing {
+    background: var(--ink); color: var(--paper);
+    border-radius: var(--radius); padding: 3rem 2.2rem; text-align: center;
+    margin: 1rem 0 3.5rem;
+  }
+  @media (prefers-color-scheme: dark) { .closing { background: var(--paper-raised); color: var(--ink); border: 1px solid var(--line); } }
+  :root[data-theme="dark"] .closing { background: var(--paper-raised); color: var(--ink); border: 1px solid var(--line); }
+  .closing h2 { color: inherit; font-size: clamp(1.5rem, 3vw, 2rem); margin-bottom: .8rem; }
+  .closing p { color: color-mix(in srgb, currentColor 70%, transparent); max-width: 30rem; margin: 0 auto 1.6rem; }
+  .closing .cta-row { justify-content: center; }
+
+  footer { border-top: 1px solid var(--line); padding: 2rem 0 3rem; }
+  .footer-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; font-size: .85rem; color: var(--ink-faint); }
+  footer a { text-decoration: underline; text-underline-offset: 3px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .field, .btn, .nav-cta { will-change: transform; }
+  }
+</style>
 </head>
 <body>
-<p>מעבירים לניהול הטפסים... אם זה לא קורה אוטומטית, <a href="admin.html">לחצו כאן</a>.</p>
+
+<div class="wrap">
+  <header>
+    <div class="wordmark">PDF<span class="dot">Sign</span></div>
+    <a class="nav-cta" href="admin.html">כניסה למערכת ←</a>
+  </header>
+</div>
+
+<div class="wrap">
+  <section class="hero">
+    <div class="hero-grid">
+      <div>
+        <div class="eyebrow">חתימה דיגיטלית לעסק הקטן</div>
+        <h1>הטופס נשלח, מולא, <em>ונחתם</em> — לפני שהייתם מוצאים מדפסת.</h1>
+        <p class="lede">מעלים כל קובץ PDF, מסמנים בעכבר איפה צריך למלא ולחתום, ושולחים קישור אחד. הלקוחות פותחים אותו מהטלפון או מהמחשב, ממלאים וחותמים — והעותק החתום כבר מחכה לכם במערכת.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="admin.html">כניסה למערכת</a>
+          <a class="btn btn-ghost" href="#how">איך זה עובד</a>
+        </div>
+      </div>
+      <div class="sig-card">
+        <div class="field-line"><span>שדה: חתימה</span><span>חובה</span></div>
+        <div class="sig-canvas-wrap">
+          <svg id="sigSvg" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true">
+            <path id="sigPath" d="" />
+          </svg>
+        </div>
+        <div class="perforation"></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="wrap">
+  <section class="block" id="how">
+    <div class="section-head">
+      <div class="eyebrow">התהליך</div>
+      <h2>ארבעה שלבים, בלי לצאת מהדפדפן</h2>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <span class="num">01</span>
+        <h3>מעלים PDF</h3>
+        <p>חוזה, טופס הזמנה, הצהרת בריאות, כתב ויתור — כל מסמך קיים, בלי לבנות אותו מחדש.</p>
+      </div>
+      <div class="step">
+        <span class="num">02</span>
+        <h3>מסמנים שדות</h3>
+        <p>גוררים תיבות על גבי המסמך: טקסט, תאריך, תיבת סימון, חתימה. אפשר גם לתת ל-AI לזהות את זה לבד.</p>
+      </div>
+      <div class="step">
+        <span class="num">03</span>
+        <h3>שולחים קישור</h3>
+        <p>קישור אחד לכולם, או קובץ Excel שלם עם שמות ואימיילים לשליחה בבת אחת.</p>
+      </div>
+      <div class="step">
+        <span class="num">04</span>
+        <h3>מקבלים עותק חתום</h3>
+        <p>כל הגשה נשמרת אצלכם במערכת, מוכנה להורדה - בודדת או כקובץ ZIP לכל התבנית.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="wrap">
+  <section class="block">
+    <div class="section-head">
+      <div class="eyebrow">מה יש בפנים</div>
+      <h2>לא רק "PDF עם חתימה"</h2>
+      <p>המערכת נבנתה סביב איך שטפסים באמת עובדים אצל עסק קטן - כמה חותמים, הרבה נמענים, וקבצים גדולים מסריקה.</p>
+    </div>
+    <div class="fields">
+      <div class="field">
+        <span class="label">מילוי וחתימה</span>
+        <h3>עותק אישי לכל ממלא</h3>
+        <p>כל מי שפותח את הקישור ממלא וחותם עותק עצמאי משלו - מהעכבר או מהאצבע על מסך מגע.</p>
+      </div>
+      <div class="field">
+        <span class="label">חתימה מרובה</span>
+        <h3>כשכמה אנשים צריכים לחתום על אותו מסמך</h3>
+        <p>עובד ואז מנהל, בזה אחר זה, על אותו עותק בדיוק - כל חותם רואה את מי שחתם לפניו.</p>
+      </div>
+      <div class="field">
+        <span class="label">זיהוי שדות אוטומטי<span class="tag">AI</span></span>
+        <h3>המערכת מסמנת עבורכם</h3>
+        <p>מנתחת את העמוד, מוצאת קווים ריקים למילוי, ומציעה שדות מוכנים לבדיקה ואישור לפני שמירה.</p>
+      </div>
+      <div class="field">
+        <span class="label">הזמנות בקבוצה<span class="tag">AI</span></span>
+        <h3>קובץ Excel אחד, כל הרשימה מוזמנת</h3>
+        <p>מעלים שמות ואימיילים, והמערכת שולחת לכולם את קישור הטופס - מחשבון ה-Gmail שלכם.</p>
+      </div>
+      <div class="field">
+        <span class="label">בלי מדפסת ובלי סורק</span>
+        <h3>גם קבצים גדולים מסריקה</h3>
+        <p>תומך בקבצים עד 3MB - מספיק לתמונה סרוקה באיכות סבירה, לא רק PDF טקסטואלי נקי.</p>
+      </div>
+      <div class="field">
+        <span class="label">ריבוי משתמשים</span>
+        <h3>כל איש צוות עם הטפסים שלו</h3>
+        <p>אפשר לתת גישה לכמה אנשי צוות - כל אחד רואה ומנהל רק את הטפסים וההגשות שהוא יצר.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="wrap">
+  <section class="block">
+    <div class="section-head">
+      <div class="eyebrow">בכנות</div>
+      <h2>כמה מילים על מה זה כן ולא</h2>
+    </div>
+    <div class="trust">
+      <div class="trust-item">
+        <h3>מוגן, לא ציבורי</h3>
+        <p>אין הרשמה עצמית. גישה למערכת ניתנת ידנית, לפי בקשה.</p>
+      </div>
+      <div class="trust-item">
+        <h3>לא תחליף לחתימה משפטית מאושרת</h3>
+        <p>מתאים לטפסים פנימיים, הצהרות והסכמות - לא מחליף חתימה אלקטרונית מאושרת בדין כשזו נדרשת.</p>
+      </div>
+      <div class="trust-item">
+        <h3>הקבצים אצלכם</h3>
+        <p>כל הגשה שמורה במערכת שלכם ונגישה להורדה בכל עת, כולל בקובץ ZIP מרוכז.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="wrap">
+  <div class="closing">
+    <h2>יש לכם כבר גישה?</h2>
+    <p>נכנסים למערכת ומתחילים להעלות את הטופס הראשון. אין הרשמה - הגישה ניתנת ישירות.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="admin.html">כניסה למערכת</a>
+      <a class="btn btn-ghost" href="mailto:v.carmel@gmail.com?subject=בקשת%20גישה%20ל-PDFSign">בקשת גישה</a>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-row">
+      <span>PDFSign</span>
+      <span><a href="admin.html">כניסה למערכת</a> · <a href="mailto:v.carmel@gmail.com">יצירת קשר</a></span>
+    </div>
+  </footer>
+</div>
+
+<script>
+(function () {
+  // נקודות זרימה של "חתימה" מופשטת - נוצרות פרוצדורלית (סכום גלים + רעש קל
+  // בזרע קבוע), לא טקסט אמיתי - כדי לא להסתמך על ציור אותיות עברית. במרחב
+  // קבוע (viewBox 0..600 / 0..110) כדי שקנה המידה הרספונסיבי יטופל ע"י ה-SVG
+  // עצמו (viewBox + width:100%), בלי צורך לעקוב אחר שינויי גודל ב-JS.
+  var W = 600, H = 110;
+  function buildStrokePoints() {
+    var pts = [];
+    var n = 140;
+    var seed = 7;
+    function rand() { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; }
+    var y0 = H * 0.55;
+    for (var i = 0; i < n; i++) {
+      var t = i / (n - 1);
+      var x = W * 0.06 + t * W * 0.88;
+      var y = y0
+        + Math.sin(t * Math.PI * 2.3) * H * 0.22
+        + Math.sin(t * Math.PI * 5.1 + 1.4) * H * 0.07
+        + (rand() - 0.5) * H * 0.02;
+      if (t > 0.78) y -= (t - 0.78) * H * 0.9; // תג עולה בסוף, כמו סוף חתימה
+      pts.push(x.toFixed(1) + ',' + y.toFixed(1));
+    }
+    return pts;
+  }
+
+  var path = document.getElementById('sigPath');
+  path.setAttribute('d', 'M' + buildStrokePoints().join(' L'));
+
+  var length = path.getTotalLength();
+  path.style.strokeDasharray = length;
+  path.style.strokeDashoffset = length;
+
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion) {
+    path.style.strokeDashoffset = '0';
+  } else {
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { path.style.strokeDashoffset = '0'; });
+    });
+  }
+})();
+</script>
 </body>
 </html>
