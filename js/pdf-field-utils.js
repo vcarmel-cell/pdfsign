@@ -197,7 +197,7 @@ function initSignaturePad(canvas) {
   ctx.scale(dpr, dpr);
   ctx.lineWidth = 2;
   ctx.lineCap = 'round';
-  ctx.strokeStyle = '#111';
+  ctx.strokeStyle = '#1a3fa1'; // כחול עט (דיו), במקום שחור
 
   function pos(e) {
     const rect = canvas.getBoundingClientRect();
