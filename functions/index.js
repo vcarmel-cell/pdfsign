@@ -275,12 +275,16 @@ exports.sendBulkInvites = onRequest(
       return;
     }
 
-    const shareLink = APP_BASE_URL + 'fill.html?id=' + encodeURIComponent(templateId);
     const templateName = template.name || 'טופס';
     const results = [];
     for (const r of recipients) {
       const email = r.email.trim();
       const name = (r.name || '').trim();
+      // כתובת אישית לכל נמען - כוללת את המייל שלו (ואת השם, אם קיים) כפרמטרים
+      // ב-URL, כדי ש-fill.html יוכל לתייג את ההגשה בלי לדרוש הקלדה נוספת.
+      const shareLink = APP_BASE_URL + 'fill.html?id=' + encodeURIComponent(templateId) +
+        '&e=' + encodeURIComponent(email) +
+        (name ? '&n=' + encodeURIComponent(name) : '');
       try {
         await transporter.sendMail({
           from: sender.email,
@@ -299,6 +303,26 @@ exports.sendBulkInvites = onRequest(
     }
 
     const sent = results.filter(r => r.ok).length;
+
+    try {
+      await admin.firestore().collection('inviteBatches').add({
+        templateId: templateId,
+        templateName: templateName,
+        ownerId: template.ownerId,
+        sentBy: decoded.uid,
+        sentByEmail: decoded.email || null,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        recipients: recipients.map(r => {
+          const email = r.email.trim();
+          const result = results.find(x => x.email === email);
+          return { name: (r.name || '').trim(), email: email, sent: !!(result && result.ok) };
+        })
+      });
+    } catch (err) {
+      // לא חוסם את התגובה ללקוח - השליחה עצמה כבר הצליחה/נכשלה ותועדה ב-results.
+      logger.error('inviteBatches write failed', err);
+    }
+
     res.status(200).json({ sent: sent, failed: results.length - sent, results: results });
   }
 );

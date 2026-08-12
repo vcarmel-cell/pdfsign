@@ -289,6 +289,8 @@
     <h2 id="submissions-title"></h2>
     <button type="button" id="download-all-zip-btn" class="secondary" style="margin-bottom:.6rem;">הורדת כל ההגשות (ZIP)</button>
     <button type="button" id="download-data-excel-btn" class="secondary" style="margin-bottom:.6rem;">הורדת נתונים (Excel)</button>
+    <button type="button" id="check-responses-btn" class="secondary" style="margin-bottom:.6rem;">בדיקת מי הגיב (הזמנות בקבוצה)</button>
+    <div id="response-status-panel" style="display:none; margin-bottom:1rem;"></div>
     <div id="submissions-list"></div>
   </section>
 
@@ -1086,11 +1088,14 @@ document.getElementById('back-to-templates-btn-2').addEventListener('click', () 
 // ─── הגשות ───────────────────────────────────────────────
 let submissionsViewTemplate = null;
 let submissionsViewList = [];
+let inviteBatchesList = [];
 
 async function openSubmissionsView(template) {
   submissionsViewTemplate = template;
   showView('submissions');
   document.getElementById('submissions-title').textContent = 'הגשות: ' + template.name;
+  document.getElementById('response-status-panel').style.display = 'none';
+  inviteBatchesList = [];
   const list = document.getElementById('submissions-list');
   list.innerHTML = '<p>טוען...</p>';
   try {
@@ -1151,6 +1156,7 @@ async function downloadSubmissionsDataExcel() {
     const rows = submissionsViewList.map(s => {
       const row = {};
       row['מולא ע"י'] = isMultiSign ? Object.values(s.signerNames || {}).join(', ') : (s.filledBy || '');
+      row['אימייל'] = s.filledByEmail || '';
       row['תאריך הגשה'] = s.createdAt ? s.createdAt.toDate().toLocaleString('he-IL') : '';
       if (isMultiSign) row['סטטוס'] = (s.status === 'completed') ? 'הושלם' : 'בתהליך';
       dataFields.forEach(f => {
@@ -1172,6 +1178,49 @@ async function downloadSubmissionsDataExcel() {
   }
 }
 document.getElementById('download-data-excel-btn').addEventListener('click', downloadSubmissionsDataExcel);
+
+// ─── בדיקת מי הגיב (מול הזמנות בקבוצה שנשלחו) ─────────────────────────
+async function loadResponseStatus() {
+  const panel = document.getElementById('response-status-panel');
+  panel.style.display = 'block';
+  panel.innerHTML = '<p>טוען...</p>';
+  try {
+    let query = db.collection('inviteBatches').where('templateId', '==', submissionsViewTemplate.id);
+    if (currentRole !== 'admin') query = query.where('ownerId', '==', currentUser.uid);
+    const snap = await query.get();
+    inviteBatchesList = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    inviteBatchesList.sort((a, b) => (b.createdAt ? b.createdAt.toMillis() : 0) - (a.createdAt ? a.createdAt.toMillis() : 0));
+    renderResponseStatus();
+  } catch (err) {
+    if (!(await handleFirestoreError(err))) panel.innerHTML = '<p class="error">שגיאה בטעינת הזמנות: ' + escapeHtml(err.message) + '</p>';
+  }
+}
+
+function renderResponseStatus() {
+  const panel = document.getElementById('response-status-panel');
+  if (!inviteBatchesList.length) { panel.innerHTML = '<p>לא נשלחו הזמנות בקבוצה לתבנית זו.</p>'; return; }
+  const respondedEmails = new Set(
+    submissionsViewList.map(s => (s.filledByEmail || '').trim().toLowerCase()).filter(Boolean)
+  );
+  panel.innerHTML = '';
+  inviteBatchesList.forEach(batch => {
+    const date = batch.createdAt ? batch.createdAt.toDate().toLocaleString('he-IL') : '—';
+    const box = document.createElement('div');
+    box.className = 'card';
+    let rowsHtml = '<h4>הזמנה מ-' + escapeHtml(date) + '</h4>';
+    (batch.recipients || []).forEach(r => {
+      const emailKey = (r.email || '').trim().toLowerCase();
+      const statusLabel = !r.sent ? 'שליחת המייל נכשלה' : (respondedEmails.has(emailKey) ? 'הגיב' : 'טרם הגיב');
+      const statusClass = !r.sent ? 'error' : (respondedEmails.has(emailKey) ? '' : 'sub-date');
+      rowsHtml += '<div style="display:flex; gap:.6rem; justify-content:space-between;">' +
+        '<span>' + escapeHtml(r.name || '—') + ' — ' + escapeHtml(r.email) + '</span>' +
+        '<span class="' + statusClass + '">' + escapeHtml(statusLabel) + '</span></div>';
+    });
+    box.innerHTML = rowsHtml;
+    panel.appendChild(box);
+  });
+}
+document.getElementById('check-responses-btn').addEventListener('click', loadResponseStatus);
 
 function renderSubmissionsList(submissions) {
   const list = document.getElementById('submissions-list');

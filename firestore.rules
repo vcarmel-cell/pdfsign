@@ -164,5 +164,13 @@ service cloud.firestore {
       );
       allow delete: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);
     }
+
+    // רשומות של הזמנות בקבוצה שנשלחו (מי הוזמן, האם המייל נשלח בהצלחה) -
+    // נכתב רק ע"י ה-Cloud Function (Admin SDK, עוקף את החוקים) כדי ש-"sent"
+    // יהיה נתון אמין ולא ניתן לזיוף ע"י הלקוח.
+    match /inviteBatches/{batchId} {
+      allow get, list: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);
+      allow create, update, delete: if false;
+    }
   }
 }

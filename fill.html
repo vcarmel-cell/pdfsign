@@ -115,6 +115,9 @@ let db, auth, storage;
 let template = null;
 let templateId = null;
 let fillerName = '';
+// כתובת המייל של הנמען, אם הקישור הגיע מהזמנה בקבוצה (fill.html?...&e=...) -
+// מאפשרת למנהל לבדוק מי הגיב, בלי לדרוש מהממלא להקליד אותה בעצמו.
+let invitedEmail = null;
 let pdfDocJs = null;
 const pageBoxSizes = {};
 let fieldRuntime = {};
@@ -324,6 +327,7 @@ async function submitSingleMode() {
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       values: values
     };
+    if (invitedEmail) submissionDoc.filledByEmail = invitedEmail;
 
     let pdfBase64 = null;
     let pdfUrl = null;
@@ -535,6 +539,8 @@ async function init() {
   templateId = params.get('id');
   const submissionId = params.get('submission');
   const signerFieldId = params.get('signer');
+  invitedEmail = params.get('e');
+  const invitedName = params.get('n');
   if (!templateId) { showView('invalid'); return; }
 
   await loadScripts(FIREBASE_SDK_URLS);
@@ -575,6 +581,7 @@ async function init() {
 
   document.getElementById('page-title').textContent = template.name;
   document.getElementById('name-modal-title').textContent = modalTitle;
+  if (invitedName) document.getElementById('filler-name-input').value = invitedName;
   showView('name-modal');
 }
 
