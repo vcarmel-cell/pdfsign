@@ -288,6 +288,7 @@
     <button type="button" id="back-to-templates-btn-2" class="secondary">← חזרה לרשימת התבניות</button>
     <h2 id="submissions-title"></h2>
     <button type="button" id="download-all-zip-btn" class="secondary" style="margin-bottom:.6rem;">הורדת כל ההגשות (ZIP)</button>
+    <button type="button" id="download-data-excel-btn" class="secondary" style="margin-bottom:.6rem;">הורדת נתונים (Excel)</button>
     <div id="submissions-list"></div>
   </section>
 
@@ -1135,6 +1136,42 @@ async function downloadAllSubmissionsZip() {
   }
 }
 document.getElementById('download-all-zip-btn').addEventListener('click', downloadAllSubmissionsZip);
+
+// ─── הורדת נתוני ההגשות כ-Excel (בלי חתימות - רק ערכי השדות) ──────────
+async function downloadSubmissionsDataExcel() {
+  if (!submissionsViewList.length) { alert('אין הגשות להורדה.'); return; }
+  const dataFields = (submissionsViewTemplate.fields || []).filter(f => f.type !== 'signature');
+  const isMultiSign = submissionsViewTemplate.mode === 'multiSign';
+  const btn = document.getElementById('download-data-excel-btn');
+  btn.disabled = true;
+  btn.textContent = 'מכין קובץ...';
+  try {
+    if (typeof XLSX === 'undefined') await loadScripts([SHEETJS_SCRIPT_URL]);
+
+    const rows = submissionsViewList.map(s => {
+      const row = {};
+      row['מולא ע"י'] = isMultiSign ? Object.values(s.signerNames || {}).join(', ') : (s.filledBy || '');
+      row['תאריך הגשה'] = s.createdAt ? s.createdAt.toDate().toLocaleString('he-IL') : '';
+      if (isMultiSign) row['סטטוס'] = (s.status === 'completed') ? 'הושלם' : 'בתהליך';
+      dataFields.forEach(f => {
+        const val = (s.values || {})[f.id];
+        row[f.label] = (f.type === 'checkbox') ? (val ? 'כן' : 'לא') : (val === undefined || val === null ? '' : String(val));
+      });
+      return row;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'הגשות');
+    XLSX.writeFile(wb, (submissionsViewTemplate.name || 'נתונים') + '.xlsx');
+  } catch (err) {
+    alert('שגיאה ביצירת קובץ ה-Excel: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'הורדת נתונים (Excel)';
+  }
+}
+document.getElementById('download-data-excel-btn').addEventListener('click', downloadSubmissionsDataExcel);
 
 function renderSubmissionsList(submissions) {
   const list = document.getElementById('submissions-list');
