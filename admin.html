@@ -146,6 +146,7 @@
     <span id="current-user-email"></span>
     <button type="button" id="nav-templates-btn" class="secondary">תבניות</button>
     <button type="button" id="nav-users-btn" class="secondary" style="display:none;">ניהול משתמשים</button>
+    <button type="button" id="nav-requests-btn" class="secondary" style="display:none;">בקשות גישה</button>
     <button id="logout-btn">התנתקות</button>
   </div>
 </header>
@@ -226,6 +227,12 @@
       <p class="error" id="create-user-error"></p>
     </div>
     <div id="users-list"></div>
+  </section>
+
+  <section id="view-requests" class="view">
+    <h2>בקשות גישה</h2>
+    <p style="font-size:.85rem; color:var(--text-muted);">פניות שהתקבלו מהטופס באתר השיווקי (index.html).</p>
+    <div id="requests-list"></div>
   </section>
 
   <section id="view-editor" class="view">
@@ -355,6 +362,7 @@ function watchOwnUserDoc(uid) {
 
 document.getElementById('nav-templates-btn').addEventListener('click', () => { showView('templates'); loadTemplatesList(); });
 document.getElementById('nav-users-btn').addEventListener('click', () => { showView('users'); loadUsersList(); });
+document.getElementById('nav-requests-btn').addEventListener('click', () => { showView('requests'); loadAccessRequestsList(); });
 
 // ─── התחברות ─────────────────────────────────────────────
 document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -1414,6 +1422,49 @@ function renderUsersList(users) {
   });
 }
 
+// ─── בקשות גישה (מהטופס הציבורי ב-index.html) ─────────────────────────
+async function loadAccessRequestsList() {
+  const list = document.getElementById('requests-list');
+  list.innerHTML = '<p>טוען...</p>';
+  try {
+    const snap = await db.collection('accessRequests').get();
+    const requests = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    requests.sort((a, b) => (b.createdAt ? b.createdAt.toMillis() : 0) - (a.createdAt ? a.createdAt.toMillis() : 0));
+    renderAccessRequestsList(requests);
+  } catch (err) {
+    list.innerHTML = '<p class="error">שגיאה בטעינת בקשות הגישה: ' + escapeHtml(err.message) + '</p>';
+  }
+}
+
+function renderAccessRequestsList(requests) {
+  const list = document.getElementById('requests-list');
+  if (!requests.length) { list.innerHTML = '<p>אין בקשות גישה עדיין.</p>'; return; }
+  list.innerHTML = '';
+  requests.forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'user-row';
+    const date = r.createdAt ? r.createdAt.toDate().toLocaleString('he-IL') : '—';
+    const metaParts = [date, r.email];
+    if (r.phone) metaParts.push(r.phone);
+    if (r.business) metaParts.push(r.business);
+    row.innerHTML =
+      '<div class="u-main">' +
+        '<strong>' + escapeHtml(r.name || '—') + '</strong>' +
+        '<span class="u-meta">' + metaParts.map(escapeHtml).join(' · ') + '</span>' +
+        (r.message ? '<span class="u-meta">' + escapeHtml(r.message) + '</span>' : '') +
+      '</div>' +
+      '<button type="button" class="u-toggle danger">מחיקה</button>';
+    row.querySelector('.u-toggle').addEventListener('click', async () => {
+      if (!confirm('למחוק את הבקשה הזו?')) return;
+      try {
+        await db.collection('accessRequests').doc(r.id).delete();
+        await loadAccessRequestsList();
+      } catch (err) { alert('שגיאה במחיקה: ' + err.message); }
+    });
+    list.appendChild(row);
+  });
+}
+
 async function setUserActive(uid, active) {
   try {
     await db.collection('users').doc(uid).update({ active });
@@ -1568,6 +1619,7 @@ async function init() {
 
     document.getElementById('current-user-email').textContent = user.email;
     document.getElementById('nav-users-btn').style.display = (currentRole === 'admin') ? 'inline-block' : 'none';
+    document.getElementById('nav-requests-btn').style.display = (currentRole === 'admin') ? 'inline-block' : 'none';
     updatePremiumFeatureVisibility();
     showView('templates');
     loadTemplatesList();

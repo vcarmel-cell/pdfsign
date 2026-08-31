@@ -180,6 +180,24 @@
   .closing p { color: color-mix(in srgb, currentColor 70%, transparent); max-width: 30rem; margin: 0 auto 1.6rem; }
   .closing .cta-row { justify-content: center; }
 
+  /* ── request-access form ── */
+  .request-card {
+    background: var(--paper-raised); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 2.2rem; max-width: 32rem; margin: 0 auto 3.5rem; box-shadow: var(--shadow); scroll-margin-top: 2rem;
+  }
+  .request-card h2 { font-size: 1.3rem; margin-bottom: .5rem; }
+  .request-card > p { color: var(--ink-soft); margin: 0 0 1.2rem; }
+  #access-request-form { display: flex; flex-direction: column; gap: .8rem; }
+  #access-request-form input, #access-request-form textarea {
+    font-family: inherit; font-size: .95rem; padding: .7rem .9rem; border: 1px solid var(--line);
+    border-radius: var(--radius); background: var(--paper); color: var(--ink); resize: vertical;
+  }
+  #access-request-form input:focus, #access-request-form textarea:focus { outline: 2px solid var(--stamp); outline-offset: 1px; }
+  #access-request-form button { align-self: flex-start; }
+  .request-msg { margin-top: 1rem; font-size: .9rem; }
+  .request-error { color: var(--stamp-ink); }
+  .request-success { color: #2f7a4f; }
+
   footer { border-top: 1px solid var(--line); padding: 2rem 0 3rem; }
   .footer-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; font-size: .85rem; color: var(--ink-faint); }
   footer a { text-decoration: underline; text-underline-offset: 3px; }
@@ -206,7 +224,8 @@
         <h1>הטופס נשלח, מולא, <em>ונחתם</em> — לפני שהייתם מוצאים מדפסת.</h1>
         <p class="lede">מעלים כל קובץ PDF, מסמנים בעכבר איפה צריך למלא ולחתום, ושולחים קישור אחד. הלקוחות פותחים אותו מהטלפון או מהמחשב, ממלאים וחותמים — והעותק החתום כבר מחכה לכם במערכת.</p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="admin.html">כניסה למערכת</a>
+          <a class="btn btn-primary" href="demo.html">נסו את זה עכשיו (דמו)</a>
+          <a class="btn btn-ghost" href="admin.html">כניסה למערכת</a>
           <a class="btn btn-ghost" href="#how">איך זה עובד</a>
         </div>
       </div>
@@ -325,14 +344,29 @@
     <p>נכנסים למערכת ומתחילים להעלות את הטופס הראשון. אין הרשמה - הגישה ניתנת ישירות.</p>
     <div class="cta-row">
       <a class="btn btn-primary" href="admin.html">כניסה למערכת</a>
-      <a class="btn btn-ghost" href="mailto:v.carmel@gmail.com?subject=בקשת%20גישה%20ל-PDFSign">בקשת גישה</a>
+      <a class="btn btn-ghost" href="#request-access">בקשת גישה</a>
     </div>
+  </div>
+
+  <div class="request-card" id="request-access">
+    <h2>מעוניינים לקבל גישה?</h2>
+    <p>השאירו פרטים ונחזור אליכם.</p>
+    <form id="access-request-form">
+      <input type="text" id="req-name" placeholder="שם מלא *" required />
+      <input type="email" id="req-email" placeholder="אימייל *" required />
+      <input type="tel" id="req-phone" placeholder="טלפון (לא חובה)" />
+      <input type="text" id="req-business" placeholder="שם העסק (לא חובה)" />
+      <textarea id="req-message" placeholder="הודעה (לא חובה)" rows="3"></textarea>
+      <button type="submit" class="btn btn-primary">שליחת בקשה</button>
+    </form>
+    <p id="request-error" class="request-msg request-error" style="display:none;"></p>
+    <p id="request-success" class="request-msg request-success" style="display:none;">תודה! נחזור אליכם בהקדם.</p>
   </div>
 
   <footer>
     <div class="footer-row">
       <span>PDFSign</span>
-      <span><a href="admin.html">כניסה למערכת</a> · <a href="mailto:v.carmel@gmail.com">יצירת קשר</a></span>
+      <span><a href="admin.html">כניסה למערכת</a> · <a href="#request-access">בקשת גישה</a></span>
     </div>
   </footer>
 </div>
@@ -378,6 +412,64 @@
       requestAnimationFrame(function () { path.style.strokeDashoffset = '0'; });
     });
   }
+})();
+</script>
+
+<script>
+// ─── טופס "בקשת גישה" - נכתב ישירות ל-Firestore REST API, בלי לטעון את כל
+// ה-SDK של Firebase רק בשביל כתיבה אחת (הדף הזה בכוונה נשאר קליל/בלי Firebase
+// בכל שאר האתר). אין צורך באימות - חוקי firestore.rules מאפשרים כתיבה פתוחה
+// ומאומתת (name/email חובה, שדות אחרים אופציונליים) לאוסף accessRequests
+// בלבד; קריאה ממנו מוגבלת למנהל.
+(function () {
+  var FIRESTORE_CREATE_URL = 'https://firestore.googleapis.com/v1/projects/pdfsign-b5230/databases/(default)/documents/accessRequests';
+  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function strVal(v) { return { stringValue: v }; }
+
+  document.getElementById('access-request-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var errorEl = document.getElementById('request-error');
+    var successEl = document.getElementById('request-success');
+    errorEl.style.display = 'none';
+    successEl.style.display = 'none';
+
+    var name = document.getElementById('req-name').value.trim();
+    var email = document.getElementById('req-email').value.trim();
+    var phone = document.getElementById('req-phone').value.trim();
+    var business = document.getElementById('req-business').value.trim();
+    var message = document.getElementById('req-message').value.trim();
+
+    if (!name) { errorEl.textContent = 'נא להזין שם מלא.'; errorEl.style.display = 'block'; return; }
+    if (!EMAIL_RE.test(email)) { errorEl.textContent = 'נא להזין כתובת אימייל תקינה.'; errorEl.style.display = 'block'; return; }
+
+    var fields = {
+      name: strVal(name),
+      email: strVal(email),
+      createdAt: { timestampValue: new Date().toISOString() }
+    };
+    if (phone) fields.phone = strVal(phone);
+    if (business) fields.business = strVal(business);
+    if (message) fields.message = strVal(message);
+
+    var submitBtn = e.target.querySelector('button[type=submit]');
+    submitBtn.disabled = true;
+    try {
+      var res = await fetch(FIRESTORE_CREATE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: fields })
+      });
+      if (!res.ok) throw new Error('שגיאת שרת (' + res.status + ')');
+      e.target.reset();
+      successEl.style.display = 'block';
+    } catch (err) {
+      errorEl.textContent = 'שגיאה בשליחת הבקשה: ' + err.message;
+      errorEl.style.display = 'block';
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
 })();
 </script>
 </body>

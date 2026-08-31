@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>דמו — PDFSign</title>
+<style>
+  :root { --primary: #2563eb; --primary-dark: #1d4ed8; --danger: #dc2626; --border: #d1d5db; --bg: #f3f4f6; --text: #111827; --text-muted: #6b7280; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+  header { background: #111827; color: white; padding: .9rem 1.2rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  header h1 { font-size: 1.1rem; margin: 0; }
+  header a { color: #93c5fd; font-size: .85rem; text-decoration: none; }
+  .demo-banner {
+    background: #fef3c7; color: #92400e; text-align: center; font-size: .85rem;
+    padding: .6rem 1rem;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 1rem 1rem 6rem 1rem; overflow-x: auto; }
+  .card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 1.4rem; max-width: 420px; margin: 3rem auto; text-align: center; }
+  button { background: var(--primary); color: white; border: none; border-radius: 6px; padding: .6rem 1.1rem; font-size: .95rem; cursor: pointer; }
+  button:hover { background: var(--primary-dark); }
+  button.secondary { background: white; color: var(--text); border: 1px solid var(--border); }
+  input[type=text] { width: 100%; padding: .55rem .7rem; border: 1px solid var(--border); border-radius: 6px; font-size: .95rem; margin: .8rem 0; }
+  .error { color: var(--danger); font-size: .88rem; }
+
+  .page-wrapper { position: relative; margin: 0 auto 2rem auto; background: #fff; border: 1px solid var(--border); }
+  .page-wrapper canvas { display: block; }
+
+  .fill-field-box { position: absolute; display: flex; align-items: center; }
+  .fill-field-label {
+    position: absolute; top: -17px; right: 0; font-size: 10px; background: #fff; padding: 0 4px;
+    border-radius: 3px; color: #374151; white-space: nowrap; box-shadow: 0 0 0 1px #e5e7eb;
+  }
+  .fill-input {
+    width: 100%; height: 24px; max-height: 100%; border: 1px solid var(--primary); border-radius: 3px;
+    padding: 0 4px; font-size: 12px; background: rgba(37,99,235,.06); box-sizing: border-box; font-family: inherit;
+  }
+  .signature-canvas {
+    width: 100%; height: 100%; align-self: stretch; border: 1.5px dashed #7c3aed; border-radius: 4px;
+    background: rgba(124,58,237,.05); touch-action: none; display: block;
+  }
+  .sig-clear-btn {
+    position: absolute; left: 2px; bottom: 2px; font-size: 9px; padding: 2px 6px;
+    background: #7c3aed; border-radius: 4px;
+  }
+
+  .submit-bar {
+    position: fixed; bottom: 0; right: 0; left: 0; background: white; border-top: 1px solid var(--border);
+    padding: .8rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  }
+  .submit-bar .error { flex: 1; margin: 0; }
+  #download-link {
+    display: inline-block; margin-top: 1rem; background: var(--primary); color: white;
+    padding: .6rem 1.2rem; border-radius: 6px; text-decoration: none;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>דמו — מילוי וחתימה</h1>
+  <a href="index.html">← חזרה לאתר</a>
+</header>
+<div class="demo-banner">זהו דמו להתנסות בלבד - שום מידע לא נשמר בשום מקום, והוא נמחק כשתרעננו את הדף.</div>
+
+<main>
+  <div id="view-loading"><p style="text-align:center; margin-top:3rem;">טוען...</p></div>
+
+  <div id="view-fill" style="display:none">
+    <div id="fill-pages"></div>
+    <div class="submit-bar">
+      <p id="validation-error" class="error"></p>
+      <button type="button" id="submit-btn">שליחה (דמו)</button>
+    </div>
+  </div>
+
+  <div id="view-success" style="display:none">
+    <div class="card">
+      <h2>הדמו הושלם בהצלחה</h2>
+      <p>כך בדיוק חווה הלקוח שלכם את מילוי הטופס וההגשה.</p>
+      <a id="download-link">הורדת העותק שמילאתם</a>
+      <p style="margin-top:1rem;"><button type="button" class="secondary" id="restart-btn">נסו שוב</button></p>
+    </div>
+  </div>
+</main>
+
+<script src="js/pdf-field-utils.js"></script>
+<script>
+// תבנית קבועה בקוד (לא מגיעה מ-Firestore) - שדות ממוקמים על demo-sample.pdf,
+// שנוצר במיוחד לצורך הדמו הזה (בלי שום מיתוג/פרטים אמיתיים).
+const DEMO_TEMPLATE = {
+  name: 'טופס הדגמה',
+  pageCount: 1,
+  fields: [
+    { id: 'name', type: 'text', page: 0, xPct: 0.31990, yPct: 0.25298, wPct: 0.60453, hPct: 0.02671, label: 'שם מלא', required: true },
+    { id: 'idnum', type: 'text', page: 0, xPct: 0.31990, yPct: 0.34826, wPct: 0.60453, hPct: 0.02671, label: 'תעודת זהות', required: true },
+    { id: 'date', type: 'date', page: 0, xPct: 0.31990, yPct: 0.44354, wPct: 0.60453, hPct: 0.02671, label: 'תאריך', required: true },
+    { id: 'sig', type: 'signature', page: 0, xPct: 0.31990, yPct: 0.53882, wPct: 0.60453, hPct: 0.06233, label: 'חתימה', required: true }
+  ]
+};
+
+let pdfDocJs = null;
+let fieldRuntime = {};
+let flattenedBytesCache = null;
+
+function showView(name) {
+  ['loading', 'fill', 'success'].forEach(v => {
+    document.getElementById('view-' + v).style.display = (v === name) ? 'block' : 'none';
+  });
+}
+
+async function renderFillDocument(bytes) {
+  pdfDocJs = await loadPdfDocument(bytes);
+  const container = document.getElementById('fill-pages');
+  container.innerHTML = '';
+  fieldRuntime = {};
+
+  const page = await pdfDocJs.getPage(1);
+  const wrapper = document.createElement('div');
+  wrapper.className = 'page-wrapper';
+  const canvas = document.createElement('canvas');
+  wrapper.appendChild(canvas);
+  container.appendChild(wrapper);
+
+  const cssWidth = Math.min(Math.max(container.clientWidth || 900, 600), 900);
+  const boxSize = await renderPdfPageToCanvas(page, canvas, cssWidth);
+  wrapper.style.width = boxSize.cssWidth + 'px';
+  wrapper.style.height = boxSize.cssHeight + 'px';
+
+  DEMO_TEMPLATE.fields.forEach(field => {
+    const rectPx = pctRectToPx(field, boxSize.cssWidth, boxSize.cssHeight);
+    wrapper.appendChild(createFillFieldEl(field, rectPx));
+  });
+}
+
+function createFillFieldEl(field, rectPx) {
+  const box = document.createElement('div');
+  box.className = 'fill-field-box';
+  applyRectPx(box, rectPx);
+
+  const labelTag = document.createElement('div');
+  labelTag.className = 'fill-field-label';
+  labelTag.textContent = field.label + (field.required ? ' *' : '');
+  box.appendChild(labelTag);
+
+  if (field.type === 'text' || field.type === 'date') {
+    const input = document.createElement('input');
+    input.type = field.type === 'date' ? 'date' : 'text';
+    input.className = 'fill-input';
+    box.appendChild(input);
+    fieldRuntime[field.id] = {
+      isFilled: () => input.value.trim() !== '',
+      getStamp: () => ({ kind: 'text', value: input.value.trim() })
+    };
+  } else if (field.type === 'signature') {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'signature-canvas';
+    box.appendChild(canvas);
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'sig-clear-btn';
+    clearBtn.textContent = 'נקה';
+    box.appendChild(clearBtn);
+
+    let pad = null;
+    requestAnimationFrame(() => { pad = initSignaturePad(canvas); });
+    clearBtn.addEventListener('click', () => { if (pad) pad.clear(); });
+
+    fieldRuntime[field.id] = {
+      isFilled: () => !!(pad && pad.hasDrawn()),
+      getStamp: () => ({ kind: 'signature', dataUrl: pad ? pad.getDataURL() : null })
+    };
+  }
+
+  return box;
+}
+
+function validateRequired() {
+  const missing = [];
+  DEMO_TEMPLATE.fields.forEach(field => {
+    if (!field.required) return;
+    const rt = fieldRuntime[field.id];
+    if (!rt || !rt.isFilled()) missing.push(field.label);
+  });
+  return missing;
+}
+
+document.getElementById('submit-btn').addEventListener('click', async () => {
+  const errorEl = document.getElementById('validation-error');
+  const missing = validateRequired();
+  if (missing.length) {
+    errorEl.textContent = 'נא למלא: ' + missing.join(', ');
+    return;
+  }
+  errorEl.textContent = '';
+
+  try {
+    const res = await fetch('demo-sample.pdf');
+    const originalBytes = new Uint8Array(await res.arrayBuffer());
+    const flattenedBytes = await flattenPdf(originalBytes, DEMO_TEMPLATE.fields, (field) => {
+      const rt = fieldRuntime[field.id];
+      return rt ? rt.getStamp() : null;
+    });
+    flattenedBytesCache = flattenedBytes;
+
+    const blob = new Blob([flattenedBytes], { type: 'application/pdf' });
+    const link = document.getElementById('download-link');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'דמו-PDFSign.pdf';
+
+    showView('success');
+  } catch (err) {
+    errorEl.textContent = 'שגיאה: ' + err.message;
+  }
+});
+
+document.getElementById('restart-btn').addEventListener('click', () => location.reload());
+
+async function init() {
+  await loadPdfJs();
+  await loadScripts([PDF_LIB_SCRIPT_URL]);
+  const res = await fetch('demo-sample.pdf');
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  showView('fill');
+  await renderFillDocument(bytes);
+}
+
+// loadScripts מגיע בדרך כלל מ-js/firebase-init.js, אבל הדמו הזה בכוונה לא
+// טוען Firebase בכלל (אין שמירה/כניסה) - מוגדר כאן ישירות במקום.
+function loadScripts(urls) {
+  return new Promise((resolve, reject) => {
+    function next(i) {
+      if (i >= urls.length) return resolve(true);
+      const s = document.createElement('script');
+      s.src = urls[i];
+      s.onload = () => next(i + 1);
+      s.onerror = () => reject(new Error('נכשלה טעינת ' + urls[i]));
+      document.head.appendChild(s);
+    }
+    next(0);
+  });
+}
+
+init().catch(err => {
+  document.body.innerHTML = '<div style="padding:2rem">שגיאה בטעינת הדמו: ' + err.message + '</div>';
+});
+</script>
+</body>
+</html>

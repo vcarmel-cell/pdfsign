@@ -172,5 +172,19 @@ service cloud.firestore {
       allow get, list: if isAdmin() || (isActiveUser() && resource.data.ownerId == request.auth.uid);
       allow create, update, delete: if false;
     }
+
+    // פניות "בקשת גישה" מהדף השיווקי הציבורי (index.html) - כתיבה פתוחה
+    // ומאומתת בלי צורך באימות (הטופס לא טוען Firebase Auth בכלל), כי זו
+    // רשומת ליד פשוטה ולא מידע רגיש; קריאה מוגבלת למנהל בלבד.
+    match /accessRequests/{requestId} {
+      allow get, list: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly(['name', 'email', 'phone', 'business', 'message', 'createdAt'])
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() < 200
+        && request.resource.data.email is string && request.resource.data.email.matches('^[^@\\s]+@[^@\\s]+[.][^@\\s]+$')
+        && (!('phone' in request.resource.data) || (request.resource.data.phone is string && request.resource.data.phone.size() < 50))
+        && (!('business' in request.resource.data) || (request.resource.data.business is string && request.resource.data.business.size() < 200))
+        && (!('message' in request.resource.data) || (request.resource.data.message is string && request.resource.data.message.size() < 2000));
+      allow update, delete: if isAdmin();
+    }
   }
 }
