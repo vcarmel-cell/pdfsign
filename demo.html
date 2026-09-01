@@ -53,6 +53,21 @@
     display: inline-block; margin-top: 1rem; background: var(--primary); color: white;
     padding: .6rem 1.2rem; border-radius: 6px; text-decoration: none;
   }
+
+  .about-system {
+    max-width: 960px; margin: 3rem auto 0; padding-top: 2rem; border-top: 1px solid var(--border);
+  }
+  .about-system h2 { font-size: 1.3rem; margin: 0 0 .6rem 0; }
+  .about-system > p { color: var(--text-muted); margin: 0 0 1.4rem 0; }
+  .about-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  @media (max-width: 800px) { .about-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .about-grid { grid-template-columns: 1fr; } }
+  .about-item { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+  .about-item h3 { font-size: .95rem; margin: 0 0 .4rem 0; }
+  .about-item p { font-size: .85rem; color: var(--text-muted); margin: 0; }
+  .about-cta { text-align: center; margin: 1.6rem 0 0; }
+  .about-cta a { color: var(--primary); font-weight: 600; text-decoration: none; }
+  .about-cta a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -82,6 +97,38 @@
       <p style="margin-top:1rem;"><button type="button" class="secondary" id="restart-btn">נסו שוב</button></p>
     </div>
   </div>
+
+  <section class="about-system">
+    <h2>מה עוד אפשר לעשות במערכת</h2>
+    <p>מה שניסיתם כאן הוא רק צד המילוי והחתימה - חוויה של לקוח שקיבל קישור. במערכת המלאה, בצד הניהול, יש הרבה יותר:</p>
+    <div class="about-grid">
+      <div class="about-item">
+        <h3>העלאת כל טופס PDF</h3>
+        <p>מעלים חוזה, טופס הזמנה, הצהרת בריאות או כל מסמך קיים - וגוררים תיבות על גביו כדי לסמן איפה למלא ולחתום.</p>
+      </div>
+      <div class="about-item">
+        <h3>זיהוי שדות אוטומטי (AI)</h3>
+        <p>המערכת יכולה לנתח את העמוד ולהציע לבד היכן נמצאים קווים ריקים למילוי, במקום לסמן כל שדה ידנית.</p>
+      </div>
+      <div class="about-item">
+        <h3>חתימה מרובה</h3>
+        <p>מסמכים שבהם כמה אנשים (למשל עובד ואז מנהל) חותמים בזה אחר זה על אותו עותק בדיוק.</p>
+      </div>
+      <div class="about-item">
+        <h3>הזמנות בקבוצה</h3>
+        <p>מעלים קובץ Excel עם שמות ואימיילים, והמערכת שולחת לכולם את קישור הטופס בבת אחת - ומראה מי כבר הגיב.</p>
+      </div>
+      <div class="about-item">
+        <h3>ריבוי משתמשים</h3>
+        <p>אפשר לתת גישה לכמה אנשי צוות - כל אחד רואה ומנהל רק את הטפסים וההגשות שהוא יצר.</p>
+      </div>
+      <div class="about-item">
+        <h3>כל ההגשות במקום אחד</h3>
+        <p>כל טופס שהתקבל נשמר במערכת ומוכן להורדה - בודד, כקובץ ZIP לכל התבנית, או כנתונים מרוכזים ב-Excel.</p>
+      </div>
+    </div>
+    <p class="about-cta"><a href="index.html">לפרטים המלאים ולבקשת גישה ←</a></p>
+  </section>
 </main>
 
 <script src="js/pdf-field-utils.js"></script>
