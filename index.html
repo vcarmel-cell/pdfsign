@@ -92,6 +92,12 @@
   }
   .eyebrow::before { content: ""; width: 1.4rem; height: 1px; background: var(--stamp); }
 
+  .free-banner {
+    display: block; width: fit-content; font-size: 1.1rem; font-weight: 800; color: var(--stamp-ink);
+    background: color-mix(in srgb, var(--stamp) 12%, transparent); border: 1.5px solid var(--stamp);
+    padding: .5rem 1.2rem; border-radius: 999px; margin: .8rem 0 1.1rem;
+  }
+
   .hero h1 { font-size: clamp(2.2rem, 5vw, 3.3rem); line-height: 1.15; }
   .hero h1 em { font-style: normal; color: var(--stamp-ink); }
   .hero p.lede { font-size: 1.15rem; color: var(--ink-soft); max-width: 34rem; margin: 1.3rem 0 2rem; }
@@ -221,6 +227,7 @@
     <div class="hero-grid">
       <div>
         <div class="eyebrow">חתימה דיגיטלית לעסק הקטן</div>
+        <div class="free-banner">המערכת כרגע בשימוש חינמי לחלוטין</div>
         <h1>הטופס נשלח, מולא, <em>ונחתם</em> — לפני שהייתם מוצאים מדפסת.</h1>
         <p class="lede">מעלים כל קובץ PDF, מסמנים בעכבר איפה צריך למלא ולחתום, ושולחים קישור אחד. הלקוחות פותחים אותו מהטלפון או מהמחשב, ממלאים וחותמים — והעותק החתום כבר מחכה לכם במערכת.</p>
         <div class="cta-row">
