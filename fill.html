@@ -10,6 +10,7 @@
   body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
   header { background: #111827; color: white; padding: .9rem 1.2rem; }
   header h1 { font-size: 1.1rem; margin: 0; }
+  .header-logo { height: 5.2rem; width: auto; border-radius: 6px; background: #ffffff; padding: .2rem .5rem; }
   main { max-width: 960px; margin: 0 auto; padding: 1rem 1rem 6rem 1rem; overflow-x: auto; }
   .card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 1.4rem; max-width: 420px; margin: 3rem auto; text-align: center; }
   button { background: var(--primary); color: white; border: none; border-radius: 6px; padding: .6rem 1.1rem; font-size: .95rem; cursor: pointer; }
@@ -66,7 +67,7 @@
 </head>
 <body>
 
-<header><h1 id="page-title">מילוי טופס</h1></header>
+<header><img src="next1sign.JPG" alt="Next1 Sign" class="header-logo" /></header>
 
 <main>
   <div id="view-loading"><p style="text-align:center; margin-top:3rem;">טוען...</p></div>
@@ -579,7 +580,7 @@ async function init() {
     modalTitle = template.name + ' — חתימת ' + signerField.label;
   }
 
-  document.getElementById('page-title').textContent = template.name;
+  document.title = template.name + ' - מילוי טופס';
   document.getElementById('name-modal-title').textContent = modalTitle;
   if (invitedName) document.getElementById('filler-name-input').value = invitedName;
   showView('name-modal');
