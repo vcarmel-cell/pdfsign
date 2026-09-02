@@ -67,8 +67,15 @@
   .about-item h3 { font-size: .95rem; margin: 0 0 .4rem 0; }
   .about-item p { font-size: .85rem; color: var(--text-muted); margin: 0; }
   .about-cta { text-align: center; margin: 1.6rem 0 0; }
-  .about-cta a { color: var(--primary); font-weight: 600; text-decoration: none; }
-  .about-cta a:hover { text-decoration: underline; }
+  .about-cta-box {
+    display: block; text-decoration: none; text-align: center;
+    border: 2px solid var(--primary); border-radius: 10px;
+    padding: 1.1rem 1.5rem; background: rgba(37,99,235,.06);
+    transition: background .15s ease, transform .12s ease;
+  }
+  .about-cta-box:hover { background: rgba(37,99,235,.12); transform: translateY(-1px); }
+  .about-cta-box .line1 { display: block; font-size: 1.15rem; font-weight: 700; color: var(--text); margin-bottom: .3rem; }
+  .about-cta-box .line2 { display: block; font-size: 1rem; font-weight: 600; color: var(--primary); }
 </style>
 </head>
 <body>
@@ -128,7 +135,12 @@
         <p>כל טופס שהתקבל נשמר במערכת ומוכן להורדה - בודד, כקובץ ZIP לכל התבנית, או כנתונים מרוכזים ב-Excel.</p>
       </div>
     </div>
-    <p class="about-cta"><a href="index.html">לפרטים המלאים ולבקשת גישה ←</a></p>
+    <p class="about-cta">
+      <a href="index.html" class="about-cta-box">
+        <span class="line1">רוצים להנות מכל הטוב הזה בחינם?</span>
+        <span class="line2">זה ממש בלחיצה כאן ←</span>
+      </a>
+    </p>
   </section>
 </main>
 
