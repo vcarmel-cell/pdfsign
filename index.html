@@ -194,7 +194,7 @@
   /* ── request-access form ── */
   .request-card {
     background: var(--paper-raised); border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 2.2rem; max-width: 32rem; margin: 0 auto 3.5rem; box-shadow: var(--shadow); scroll-margin-top: 2rem;
+    padding: 2.2rem; max-width: 32rem; margin: 2rem 0; box-shadow: var(--shadow); scroll-margin-top: 2rem;
   }
   .request-card h2 { font-size: 1.3rem; margin-bottom: .5rem; }
   .request-card > p { color: var(--ink-soft); margin: 0 0 1.2rem; }
@@ -238,6 +238,22 @@
         <div class="free-banner">המערכת כרגע בשימוש חינמי לחלוטין</div>
         <h1>הטופס נשלח, מולא, <em>ונחתם</em> — לפני שהייתם מוצאים מדפסת.</h1>
         <p class="lede">מעלים כל קובץ PDF, מסמנים בעכבר איפה צריך למלא ולחתום, ושולחים קישור אחד. הלקוחות פותחים אותו מהטלפון או מהמחשב, ממלאים וחותמים — והעותק החתום כבר מחכה לכם במערכת.</p>
+
+        <div class="request-card" id="request-access">
+          <h2>מעוניינים לקבל גישה?</h2>
+          <p>השאירו פרטים ונחזור אליכם.</p>
+          <form id="access-request-form">
+            <input type="text" id="req-name" placeholder="שם מלא *" required />
+            <input type="email" id="req-email" placeholder="אימייל *" required />
+            <input type="tel" id="req-phone" placeholder="טלפון (לא חובה)" />
+            <input type="text" id="req-business" placeholder="שם העסק (לא חובה)" />
+            <textarea id="req-message" placeholder="הודעה (לא חובה)" rows="3"></textarea>
+            <button type="submit" class="btn btn-primary">שליחת בקשה</button>
+          </form>
+          <p id="request-error" class="request-msg request-error" style="display:none;"></p>
+          <p id="request-success" class="request-msg request-success" style="display:none;">תודה! נחזור אליכם בהקדם.</p>
+        </div>
+
         <div class="cta-row">
           <a class="btn btn-primary" href="demo.html">נסו את זה עכשיו (דמו)</a>
           <a class="btn btn-ghost" href="admin.html">כניסה למערכת</a>
@@ -357,21 +373,6 @@
       <a class="btn btn-primary" href="admin.html">כניסה למערכת</a>
       <a class="btn btn-ghost" href="#request-access">בקשת גישה</a>
     </div>
-  </div>
-
-  <div class="request-card" id="request-access">
-    <h2>מעוניינים לקבל גישה?</h2>
-    <p>השאירו פרטים ונחזור אליכם.</p>
-    <form id="access-request-form">
-      <input type="text" id="req-name" placeholder="שם מלא *" required />
-      <input type="email" id="req-email" placeholder="אימייל *" required />
-      <input type="tel" id="req-phone" placeholder="טלפון (לא חובה)" />
-      <input type="text" id="req-business" placeholder="שם העסק (לא חובה)" />
-      <textarea id="req-message" placeholder="הודעה (לא חובה)" rows="3"></textarea>
-      <button type="submit" class="btn btn-primary">שליחת בקשה</button>
-    </form>
-    <p id="request-error" class="request-msg request-error" style="display:none;"></p>
-    <p id="request-success" class="request-msg request-success" style="display:none;">תודה! נחזור אליכם בהקדם.</p>
   </div>
 
   <footer>
