@@ -146,16 +146,18 @@
 
 <script src="js/pdf-field-utils.js"></script>
 <script>
-// תבנית קבועה בקוד (לא מגיעה מ-Firestore) - שדות ממוקמים על demo-sample.pdf,
-// שנוצר במיוחד לצורך הדמו הזה (בלי שום מיתוג/פרטים אמיתיים).
+// תבנית קבועה בקוד (לא מגיעה מ-Firestore) - שדות ממוקמים על form-101.pdf
+// (טופס 101 האמיתי - כרטיס עובד), לפי קואורדינטות שנמדדו ישירות מהמסמך.
 const DEMO_TEMPLATE = {
-  name: 'טופס הדגמה',
-  pageCount: 1,
+  name: 'טופס 101',
+  pageCount: 2,
   fields: [
-    { id: 'name', type: 'text', page: 0, xPct: 0.31990, yPct: 0.25298, wPct: 0.60453, hPct: 0.02671, label: 'שם מלא', required: true },
-    { id: 'idnum', type: 'text', page: 0, xPct: 0.31990, yPct: 0.34826, wPct: 0.60453, hPct: 0.02671, label: 'תעודת זהות', required: true },
-    { id: 'date', type: 'date', page: 0, xPct: 0.31990, yPct: 0.44354, wPct: 0.60453, hPct: 0.02671, label: 'תאריך', required: true },
-    { id: 'sig', type: 'signature', page: 0, xPct: 0.31990, yPct: 0.53882, wPct: 0.60453, hPct: 0.06233, label: 'חתימה', required: true }
+    { id: 'lastname', type: 'text', page: 0, xPct: 0.58796, yPct: 0.26607, wPct: 0.19319, hPct: 0.02019, label: 'שם משפחה', required: true },
+    { id: 'firstname', type: 'text', page: 0, xPct: 0.40318, yPct: 0.26607, wPct: 0.18479, hPct: 0.02019, label: 'שם פרטי', required: true },
+    { id: 'idnum', type: 'text', page: 0, xPct: 0.78115, yPct: 0.26607, wPct: 0.18479, hPct: 0.02019, label: 'מספר זהות', required: true },
+    { id: 'birthdate', type: 'date', page: 0, xPct: 0.23519, yPct: 0.26607, wPct: 0.16799, hPct: 0.02019, label: 'תאריך לידה', required: true },
+    { id: 'date', type: 'date', page: 1, xPct: 0.17975, yPct: 0.76138, wPct: 0.13439, hPct: 0.02494, label: 'תאריך', required: true },
+    { id: 'sig', type: 'signature', page: 1, xPct: 0.0084, yPct: 0.76138, wPct: 0.15959, hPct: 0.05226, label: 'חתימת המבקש/ת', required: true }
   ]
 };
 
@@ -175,22 +177,24 @@ async function renderFillDocument(bytes) {
   container.innerHTML = '';
   fieldRuntime = {};
 
-  const page = await pdfDocJs.getPage(1);
-  const wrapper = document.createElement('div');
-  wrapper.className = 'page-wrapper';
-  const canvas = document.createElement('canvas');
-  wrapper.appendChild(canvas);
-  container.appendChild(wrapper);
+  for (let i = 0; i < DEMO_TEMPLATE.pageCount; i++) {
+    const page = await pdfDocJs.getPage(i + 1);
+    const wrapper = document.createElement('div');
+    wrapper.className = 'page-wrapper';
+    const canvas = document.createElement('canvas');
+    wrapper.appendChild(canvas);
+    container.appendChild(wrapper);
 
-  const cssWidth = Math.min(Math.max(container.clientWidth || 900, 600), 900);
-  const boxSize = await renderPdfPageToCanvas(page, canvas, cssWidth);
-  wrapper.style.width = boxSize.cssWidth + 'px';
-  wrapper.style.height = boxSize.cssHeight + 'px';
+    const cssWidth = Math.min(Math.max(container.clientWidth || 900, 600), 900);
+    const boxSize = await renderPdfPageToCanvas(page, canvas, cssWidth);
+    wrapper.style.width = boxSize.cssWidth + 'px';
+    wrapper.style.height = boxSize.cssHeight + 'px';
 
-  DEMO_TEMPLATE.fields.forEach(field => {
-    const rectPx = pctRectToPx(field, boxSize.cssWidth, boxSize.cssHeight);
-    wrapper.appendChild(createFillFieldEl(field, rectPx));
-  });
+    DEMO_TEMPLATE.fields.filter(f => f.page === i).forEach(field => {
+      const rectPx = pctRectToPx(field, boxSize.cssWidth, boxSize.cssHeight);
+      wrapper.appendChild(createFillFieldEl(field, rectPx));
+    });
+  }
 }
 
 function createFillFieldEl(field, rectPx) {
@@ -255,7 +259,7 @@ document.getElementById('submit-btn').addEventListener('click', async () => {
   errorEl.textContent = '';
 
   try {
-    const res = await fetch('demo-sample.pdf');
+    const res = await fetch('form-101.pdf');
     const originalBytes = new Uint8Array(await res.arrayBuffer());
     const flattenedBytes = await flattenPdf(originalBytes, DEMO_TEMPLATE.fields, (field) => {
       const rt = fieldRuntime[field.id];
@@ -279,7 +283,7 @@ document.getElementById('restart-btn').addEventListener('click', () => location.
 async function init() {
   await loadPdfJs();
   await loadScripts([PDF_LIB_SCRIPT_URL]);
-  const res = await fetch('demo-sample.pdf');
+  const res = await fetch('form-101.pdf');
   const bytes = new Uint8Array(await res.arrayBuffer());
   showView('fill');
   await renderFillDocument(bytes);
