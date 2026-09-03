@@ -1,4 +1,5 @@
 const { onRequest } = require('firebase-functions/v2/https');
+const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
@@ -326,3 +327,64 @@ exports.sendBulkInvites = onRequest(
     res.status(200).json({ sent: sent, failed: results.length - sent, results: results });
   }
 );
+
+// ─── התראה במייל למנהל על בקשת גישה חדשה (מהטופס הציבורי ב-index.html) ────
+// טריגר Firestore, לא HTTP - לא דורש שום שינוי ב-index.html (שנשאר קליל
+// ובלי Firebase Auth בכלל) ולא חושף endpoint ציבורי חדש. שולח דרך אותה
+// תשתית Gmail/gmailSenders שכבר קיימת לשליחת הזמנות בקבוצה - נדרש שלמנהל
+// עצמו יהיה מסמך gmailSenders מוגדר (אותה הגדרה בעמוד "תבניות" ב-admin.html).
+exports.notifyOnAccessRequest = onDocumentCreated('accessRequests/{requestId}', async (event) => {
+  const data = event.data && event.data.data();
+  if (!data) return;
+
+  let adminUid;
+  try {
+    const adminUser = await admin.auth().getUserByEmail(ADMIN_EMAIL);
+    adminUid = adminUser.uid;
+  } catch (err) {
+    logger.error('Could not resolve admin UID', err);
+    return;
+  }
+
+  let sender;
+  try {
+    const senderSnap = await admin.firestore().collection('gmailSenders').doc(adminUid).get();
+    if (!senderSnap.exists) {
+      logger.warn('No gmailSenders doc for admin - skipping access-request email notification. ' +
+        'הגדירו שליחה דרך Gmail בעמוד "תבניות" כדי לקבל התראות על בקשות גישה.');
+      return;
+    }
+    sender = senderSnap.data();
+  } catch (err) {
+    logger.error('Sender lookup failed', err);
+    return;
+  }
+  if (!sender.email || !sender.appPassword) return;
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: sender.email, pass: sender.appPassword }
+  });
+
+  const lines = [
+    'התקבלה בקשת גישה חדשה מדף הבית של PDFSign:',
+    '',
+    'שם: ' + (data.name || ''),
+    'אימייל: ' + (data.email || '')
+  ];
+  if (data.phone) lines.push('טלפון: ' + data.phone);
+  if (data.business) lines.push('עסק: ' + data.business);
+  if (data.message) lines.push('הודעה: ' + data.message);
+  lines.push('', 'ניתן לצפות בכל הבקשות במסך "בקשות גישה" ב-admin.html.');
+
+  try {
+    await transporter.sendMail({
+      from: sender.email,
+      to: ADMIN_EMAIL,
+      subject: 'בקשת גישה חדשה ל-PDFSign: ' + (data.name || ''),
+      text: lines.join('\n')
+    });
+  } catch (err) {
+    logger.error('Access-request notification email failed', err);
+  }
+});
