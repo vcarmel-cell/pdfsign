@@ -222,15 +222,24 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
 
   if (field.type === 'text' || field.type === 'date' || field.type === 'number') {
     const input = document.createElement('input');
-    input.type = field.type === 'date' ? 'date' : (field.type === 'number' ? 'number' : 'text');
+    input.type = field.type === 'number' ? 'number' : 'text';
     if (field.type === 'number') input.inputMode = 'numeric';
     input.className = 'fill-input';
     if (fontSizePx) input.style.fontSize = fontSizePx + 'px';
-    // שדה מספרי הוא רצף LTR מעצם טבעו, גם בתוך עמוד RTL - בלי dir="ltr"
+    // שדה מספרי/תאריך הוא רצף LTR מעצם טבעו, גם בתוך עמוד RTL - בלי dir="ltr"
     // מפורש, scrollLeft=0 בתוך תיבה שיורשת RTL מציג בפועל את הסוף של הערך
     // (לא ההתחלה), מה שגרם לתחושת "המספר נחתך" בטלפון אחרי הקלדה.
-    if (field.type === 'number') input.dir = 'ltr';
-    if (field.type === 'text' || field.type === 'number') {
+    if (field.type === 'number' || field.type === 'date') input.dir = 'ltr';
+    if (field.type === 'date') {
+      // <input type="date"> מציג את הערך לפי הלוקאל של המכשיר/דפדפן (למשל
+      // אייפון בעברית מציג "16 בספט' 2026" גם כשהערך הפנימי תקין) - טקסט חופשי
+      // עם מסכה מבטיח תצוגה זהה של DD.MM.YYYY בכל מכשיר, תואמת למה שמוטבע בפועל.
+      input.inputMode = 'numeric';
+      input.placeholder = 'DD.MM.YYYY';
+      input.maxLength = 10;
+      attachDateMask(input);
+    }
+    if (field.type === 'text' || field.type === 'number' || field.type === 'date') {
       input.addEventListener('blur', () => {
         input.scrollLeft = 0;
         try { input.setSelectionRange(0, 0); } catch (err) {}
@@ -238,8 +247,8 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
     }
     box.appendChild(input);
     fieldRuntime[field.id] = {
-      isFilled: () => input.value.trim() !== '',
-      getStamp: () => ({ kind: 'text', value: field.type === 'date' ? formatDateForStamp(input.value.trim()) : input.value.trim() })
+      isFilled: () => field.type === 'date' ? isValidDateStr(input.value.trim()) : input.value.trim() !== '',
+      getStamp: () => ({ kind: 'text', value: input.value.trim() })
     };
   } else if (field.type === 'signature') {
     const canvas = document.createElement('canvas');

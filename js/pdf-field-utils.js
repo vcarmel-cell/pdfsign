@@ -169,13 +169,27 @@ function resolveFieldFontSizePt(detectedPt, field, pageHeightPt) {
   return Math.max(6, Math.min(detectedPt, heightPt * 0.95));
 }
 
-// input[type=date] מחזיר תמיד את הערך בפורמט ISO ‏(YYYY-MM-DD) בלי קשר לשפת
-// הדפדפן - ממירים לפורמט הישראלי הרגיל (DD.MM.YYYY) לפני הטבעה/שמירה, כדי
-// שהתאריך שיוצג במסמך ובנתוני ההגשה ייראה כמו שמצפים בישראל, לא כמו ת.ז מתמטית.
-function formatDateForStamp(isoDateStr) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDateStr || '');
-  if (!m) return isoDateStr;
-  return m[3] + '.' + m[2] + '.' + m[1];
+// ─── שדה תאריך כטקסט חופשי עם מסכה (DD.MM.YYYY), במקום <input type="date"> ───
+// input[type=date] הנייטיבי מציג את הערך לפי לוקאל המכשיר/דפדפן (למשל אייפון
+// בעברית מציג "16 בספט' 2026" גם כשהערך הפנימי ISO תקין) - כך שהתצוגה בזמן
+// המילוי לא הייתה עקבית בין מכשירים ולא תואמת לפורמט שמוטבע בפועל במסמך.
+// טקסט חופשי עם מסכה נותן שליטה מלאה על התצוגה בכל מכשיר/דפדפן.
+function attachDateMask(input) {
+  input.addEventListener('input', () => {
+    const digits = input.value.replace(/\D/g, '').slice(0, 8);
+    let out = digits.slice(0, 2);
+    if (digits.length > 2) out += '.' + digits.slice(2, 4);
+    if (digits.length > 4) out += '.' + digits.slice(4, 8);
+    input.value = out;
+  });
+}
+
+function isValidDateStr(value) {
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(value || '');
+  if (!m) return false;
+  const day = +m[1], month = +m[2], year = +m[3];
+  if (month < 1 || month > 12) return false;
+  return day >= 1 && day <= new Date(year, month, 0).getDate();
 }
 
 // ─── רינדור טקסט עברי כתמונה (עוקף בעיות קידוד גופנים ב-PDF) ───
