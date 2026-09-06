@@ -35,6 +35,7 @@
   .fill-input {
     width: 100%; height: 24px; max-height: 100%; border: 1px solid var(--primary); border-radius: 3px;
     padding: 0 4px; font-size: 12px; background: rgba(37,99,235,.06); box-sizing: border-box; font-family: inherit;
+    overflow: hidden; text-overflow: ellipsis;
   }
   .signature-canvas {
     width: 100%; height: 100%; align-self: stretch; border: 1.5px dashed #7c3aed; border-radius: 4px;
@@ -207,7 +208,7 @@ async function renderFillDocument(bytes) {
       const rectPx = pctRectToPx(field, boxSize.cssWidth, boxSize.cssHeight);
       // גודל הגופן הרגיל (בלי רצפה) נשאר תואם ויזואלית למסמך המוקטן - ההגדלה
       // לגודל קריא נעשית רק בזמן עריכה בפועל, ראו attachFocusExpand למטה.
-      const fontSizePx = field.fontSize * fontScale;
+      const fontSizePx = fillInputFontSizePx(field, fontScale);
       wrapper.appendChild(createFillFieldEl(field, rectPx, fontSizePx));
     }
   }
