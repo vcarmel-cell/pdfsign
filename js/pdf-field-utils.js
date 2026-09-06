@@ -213,7 +213,7 @@ function attachFocusExpand(input, baseFontSizePx, minWidthPx, editFontSizePx) {
 // זקוקים ליותר תווים לאותו רוחב-תא מאשר טקסט חופשי - מציגים אותם קצת יותר
 // קטן במסך (לא בהטבעה בפועל, שממשיכה להשתמש ב-field.fontSize המקורי) כדי
 // לצמצם חיתוך בתצוגה במנוחה (הצעת המשתמש: 15% קטן יותר).
-const NUMERIC_FIELD_ON_SCREEN_FACTOR = 0.85;
+const NUMERIC_FIELD_ON_SCREEN_FACTOR = 0.6;
 function fillInputFontSizePx(field, fontScale) {
   const factor = (field.type === 'number' || field.type === 'date') ? NUMERIC_FIELD_ON_SCREEN_FACTOR : 1;
   return field.fontSize * fontScale * factor;
