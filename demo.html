@@ -7,6 +7,10 @@
 <style>
   :root { --primary: #2563eb; --primary-dark: #1d4ed8; --danger: #dc2626; --border: #d1d5db; --bg: #f3f4f6; --text: #111827; --text-muted: #6b7280; }
   * { box-sizing: border-box; }
+  /* מבטל את "הגדלת הטקסט האוטומטית" של Safari/מובייל (webkit text-size-adjust),
+     שמנפחת את גודל הגופן בפועל מעבר למה שנקבע ב-CSS/JS בעמודות צרות - בלעדיו
+     שדה מילוי צר (כמו תאריך) הציג טקסט גדול משמעותית ממה שחושב, וחורג מהתיבה. */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
   header { background: #111827; color: white; padding: .9rem 1.2rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
   header h1 { font-size: 1.1rem; margin: 0; }
