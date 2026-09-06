@@ -184,6 +184,28 @@ function attachDateMask(input) {
   });
 }
 
+// ─── הרחבת שדה טקסט/מספר/תאריך בזמן עריכה בפועל (focus) ───────────────
+// שדה שממוקם במדויק מעל תא צר במסמך (למשל ת.ז./תאריך בטופס רשמי) עלול
+// להיות צר מכדי להציג את כל הערך בגודל גופן קריא (16px+, נחוץ כדי שדפדפני
+// מובייל לא יזמו זום אוטומטי על העמוד בפוקוס - ראו MIN_FILL_FONT_PX).
+// בזמן עריכה מרחיבים את ה-input בפועל מעבר לגבולות תיבת השדה (התיבה עצמה
+// overflow:visible, כך שההרחבה לא נחתכת); בעזיבת הפוקוס חוזרים למידות
+// המדויקות של המסמך, כדי שהמיקום הוויזואלי הרגיל יישאר תואם למסמך.
+function attachFocusExpand(input, minWidthPx) {
+  input.addEventListener('focus', () => {
+    input.style.width = 'auto';
+    input.style.minWidth = minWidthPx + 'px';
+    input.style.zIndex = '30';
+    input.style.boxShadow = '0 2px 8px rgba(0,0,0,.35)';
+  });
+  input.addEventListener('blur', () => {
+    input.style.width = '';
+    input.style.minWidth = '';
+    input.style.zIndex = '';
+    input.style.boxShadow = '';
+  });
+}
+
 function isValidDateStr(value) {
   const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(value || '');
   if (!m) return false;

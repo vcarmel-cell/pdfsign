@@ -167,7 +167,10 @@ async function renderFillDocument() {
         field._autoFontSizeApplied = true;
       }
       const rectPx = pctRectToPx(field, boxSize.cssWidth, boxSize.cssHeight);
-      const fontSizePx = field.fontSize * fontScale;
+      // רצפה של 16px - כל ערך קטן יותר גורם לדפדפני מובייל (iOS/Android) לזום
+      // אוטומטית על העמוד כשה-input מקבל פוקוס, מה שבפועל נראה כמו "הגופן גדול
+      // מדי ולא נכנס בשלמותו" (זום כפוי במקום הצגה נקייה לפי גודל הכתב במסמך).
+      const fontSizePx = Math.max(field.fontSize * fontScale, 16);
       wrapper.appendChild(multiSign ? createMultiSignFieldEl(field, rectPx, fontSizePx) : createFillFieldEl(field, rectPx, fontSizePx));
     }
   }
@@ -210,6 +213,9 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
         input.scrollLeft = 0;
         try { input.setSelectionRange(0, 0); } catch (err) {}
       });
+      // שדה שממוקם מעל תא צר במסמך (למשל ת.ז./תאריך) עלול להיות צר מכדי
+      // להציג ערך מלא בגודל גופן קריא - מרחיבים בפועל בזמן עריכה בלבד.
+      attachFocusExpand(input, 130);
     }
     box.appendChild(input);
     fieldRuntime[field.id] = {
