@@ -149,9 +149,12 @@ async function renderFillDocument() {
     wrapper.appendChild(canvas);
     container.appendChild(wrapper);
 
-    // רוחב מינימלי כדי שהשדות (בגדלים קבועים בפיקסלים) לא ייצטופפו זה על זה
-    // במסכי טלפון צרים - גלילה אופקית + הגדלה במגע (pinch-zoom) פתוחות במקום.
-    const cssWidth = Math.min(Math.max(container.clientWidth || 900, 600), 900);
+    // מתאים לרוחב המסך בפועל (בלי רצפת מינימום שגרמה לגלילה אופקית ולתחושת
+    // "מסמך חתוך" בטלפון) - הגדלה לפרטים נעשית ע"י המשתמש עם pinch-zoom
+    // (מופעל ב-viewport meta). שדות בגדלים קבועים בפיקסלים (למשל .fill-input)
+    // ייראו יחסית גדולים על עמוד שהוקטן מאוד, אך לא יחפפו זה את זה - המיקום
+    // מחושב תמיד כאחוזים מהעמוד.
+    const cssWidth = Math.min(container.clientWidth || 900, 900);
     const boxSize = await renderPdfPageToCanvas(page, canvas, cssWidth);
     wrapper.style.width = boxSize.cssWidth + 'px';
     wrapper.style.height = boxSize.cssHeight + 'px';

@@ -187,7 +187,9 @@ async function renderFillDocument(bytes) {
     wrapper.appendChild(canvas);
     container.appendChild(wrapper);
 
-    const cssWidth = Math.min(Math.max(container.clientWidth || 900, 600), 900);
+    // מתאים לרוחב המסך בפועל (בלי רצפת מינימום שגורמת לגלילה אופקית בטלפון) -
+    // הגדלה לפרטים נעשית ע"י המשתמש עם pinch-zoom (מופעל ב-viewport meta).
+    const cssWidth = Math.min(container.clientWidth || 900, 900);
     const boxSize = await renderPdfPageToCanvas(page, canvas, cssWidth);
     wrapper.style.width = boxSize.cssWidth + 'px';
     wrapper.style.height = boxSize.cssHeight + 'px';
