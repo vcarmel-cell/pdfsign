@@ -211,7 +211,7 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
     box.appendChild(input);
     fieldRuntime[field.id] = {
       isFilled: () => input.value.trim() !== '',
-      getStamp: () => ({ kind: 'text', value: input.value.trim() })
+      getStamp: () => ({ kind: 'text', value: field.type === 'date' ? formatDateForStamp(input.value.trim()) : input.value.trim() })
     };
   } else if (field.type === 'checkbox') {
     const input = document.createElement('input');

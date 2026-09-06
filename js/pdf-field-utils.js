@@ -169,6 +169,15 @@ function resolveFieldFontSizePt(detectedPt, field, pageHeightPt) {
   return Math.max(6, Math.min(detectedPt, heightPt * 0.95));
 }
 
+// input[type=date] מחזיר תמיד את הערך בפורמט ISO ‏(YYYY-MM-DD) בלי קשר לשפת
+// הדפדפן - ממירים לפורמט הישראלי הרגיל (DD.MM.YYYY) לפני הטבעה/שמירה, כדי
+// שהתאריך שיוצג במסמך ובנתוני ההגשה ייראה כמו שמצפים בישראל, לא כמו ת.ז מתמטית.
+function formatDateForStamp(isoDateStr) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDateStr || '');
+  if (!m) return isoDateStr;
+  return m[3] + '.' + m[2] + '.' + m[1];
+}
+
 // ─── רינדור טקסט עברי כתמונה (עוקף בעיות קידוד גופנים ב-PDF) ───
 // משותף ל-fill.html (מילוי רגיל) ול-admin.html (כפתור "נסה שוב להשלים").
 function renderTextToPngDataUrl(text, widthPt, heightPt, fontSizePt) {
