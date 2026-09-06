@@ -25,10 +25,6 @@
   .page-wrapper canvas { display: block; }
 
   .fill-field-box { position: absolute; display: flex; align-items: center; }
-  .fill-field-label {
-    position: absolute; top: -17px; right: 0; font-size: 10px; background: #fff; padding: 0 4px;
-    border-radius: 3px; color: #374151; white-space: nowrap; box-shadow: 0 0 0 1px #e5e7eb;
-  }
   .fill-input {
     width: 100%; height: 24px; max-height: 100%; border: 1px solid var(--primary); border-radius: 3px;
     padding: 0 4px; font-size: 12px; background: rgba(37,99,235,.06); box-sizing: border-box; font-family: inherit;
@@ -181,11 +177,9 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
   const box = document.createElement('div');
   box.className = 'fill-field-box';
   applyRectPx(box, rectPx);
-
-  const labelTag = document.createElement('div');
-  labelTag.className = 'fill-field-label';
-  labelTag.textContent = field.label + (field.required ? ' *' : '');
-  box.appendChild(labelTag);
+  // אין תווית מרחפת מעל השדה (כמו בעבר) - בשדות צפופים היא הסתירה חלקים
+  // חשובים מהמסמך המקורי; מיקום השדה כבר מדויק מעל התיאור המודפס בפועל.
+  box.title = field.label + (field.required ? ' *' : '');
 
   if (field.type === 'text' || field.type === 'date' || field.type === 'number') {
     const input = document.createElement('input');
@@ -271,10 +265,7 @@ function createMultiSignFieldEl(field, rectPx, fontSizePx) {
   const box = document.createElement('div');
   box.className = 'fill-field-box';
   applyRectPx(box, rectPx);
-  const labelTag = document.createElement('div');
-  labelTag.className = 'fill-field-label';
-  labelTag.textContent = field.label;
-  box.appendChild(labelTag);
+  box.title = field.label;
 
   if (field.type === 'signature') {
     const rawSig = (sub.rawSignatures || {})[field.id];
