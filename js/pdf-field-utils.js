@@ -185,22 +185,25 @@ function attachDateMask(input) {
 }
 
 // ─── הרחבת שדה טקסט/מספר/תאריך בזמן עריכה בפועל (focus) ───────────────
-// שדה שממוקם במדויק מעל תא צר במסמך (למשל ת.ז./תאריך בטופס רשמי) עלול
-// להיות צר מכדי להציג את כל הערך בגודל גופן קריא (16px+, נחוץ כדי שדפדפני
-// מובייל לא יזמו זום אוטומטי על העמוד בפוקוס - ראו MIN_FILL_FONT_PX).
-// בזמן עריכה מרחיבים את ה-input בפועל מעבר לגבולות תיבת השדה (התיבה עצמה
-// overflow:visible, כך שההרחבה לא נחתכת); בעזיבת הפוקוס חוזרים למידות
-// המדויקות של המסמך, כדי שהמיקום הוויזואלי הרגיל יישאר תואם למסמך.
-function attachFocusExpand(input, minWidthPx) {
+// גודל הגופן הרגיל (baseFontSizePx) מחושב יחסית למסמך ונשאר קטן בכוונה כשהעמוד
+// מוצג מוקטן מאוד במובייל (התאמה ויזואלית לכתב המודפס) - אבל גודל קטן כזה גם
+// לא קריא בזמן הקלדה בפועל וגם עלול לגרום לדפדפני מובייל לזום אוטומטית על
+// העמוד בפוקוס. הפתרון: בפוקוס בלבד מגדילים זמנית לגודל נוח (editFontSizePx)
+// ומרחיבים את ה-input מעבר לגבולות תיבת השדה (התיבה עצמה overflow:visible,
+// כך שההרחבה לא נחתכת); בעזיבת הפוקוס חוזרים בדיוק לגודל/מידות המסמך.
+function attachFocusExpand(input, baseFontSizePx, minWidthPx, editFontSizePx) {
+  editFontSizePx = editFontSizePx || 16;
   input.addEventListener('focus', () => {
     input.style.width = 'auto';
     input.style.minWidth = minWidthPx + 'px';
+    input.style.fontSize = Math.max(baseFontSizePx, editFontSizePx) + 'px';
     input.style.zIndex = '30';
     input.style.boxShadow = '0 2px 8px rgba(0,0,0,.35)';
   });
   input.addEventListener('blur', () => {
     input.style.width = '';
     input.style.minWidth = '';
+    input.style.fontSize = baseFontSizePx + 'px';
     input.style.zIndex = '';
     input.style.boxShadow = '';
   });
