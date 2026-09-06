@@ -180,7 +180,7 @@
         <input type="file" id="upload-file" accept="application/pdf" required />
         <button type="submit">העלאה ויצירת תבנית</button>
       </form>
-      <p style="font-size:.8rem; color:var(--text-muted); margin:0 0 .4rem 0;">גודל מקסימלי לקובץ: 3MB. משתמשים רגילים מוגבלים ל-10 תבניות; יש למחוק תבנית ישנה כדי להוסיף חדשה מעבר לכך.</p>
+      <p style="font-size:.8rem; color:var(--text-muted); margin:0 0 .4rem 0;">גודל מקסימלי לקובץ: 3MB. משתמשים רגילים מוגבלים ל-4 תבניות; משתמשי פרימיום ללא הגבלה.</p>
       <p class="error" id="upload-error"></p>
     </div>
     <div id="templates-list"></div>
@@ -478,10 +478,12 @@ document.getElementById('upload-form').addEventListener('submit', async (e) => {
 });
 
 async function createTemplate(file, name) {
-  if (currentRole === 'user') {
+  // מגבלת תבניות רלוונטית רק למשתמש רגיל שאינו פרימיום - למנהל ולמשתמשי
+  // פרימיום אין הגבלת מספר תבניות בכלל.
+  if (currentRole === 'user' && (!currentUserProfile || currentUserProfile.tier !== 'premium')) {
     const existingSnap = await db.collection('templates').where('ownerId', '==', currentUser.uid).get();
-    if (existingSnap.size >= 10) {
-      throw new Error('הגעת למגבלת 10 תבניות. יש למחוק תבנית ישנה לפני הוספת תבנית חדשה.');
+    if (existingSnap.size >= 4) {
+      throw new Error('הגעת למגבלת 4 תבניות. יש למחוק תבנית ישנה לפני הוספת תבנית חדשה, או לשדרג לפרימיום לתבניות ללא הגבלה.');
     }
   }
 
