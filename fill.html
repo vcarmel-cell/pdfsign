@@ -182,6 +182,21 @@ function createFillFieldEl(field, rectPx) {
     input.type = field.type === 'date' ? 'date' : (field.type === 'number' ? 'number' : 'text');
     if (field.type === 'number') input.inputMode = 'numeric';
     input.className = 'fill-input';
+    // שדה מספרי הוא רצף LTR מעצם טבעו, גם בתוך עמוד RTL - בלי dir="ltr"
+    // מפורש, scrollLeft=0 בתוך תיבה שיורשת RTL מציג בפועל את הסוף של הערך
+    // (לא ההתחלה), מה שגרם לתחושת "המספר נחתך" בטלפון אחרי הקלדה.
+    if (field.type === 'number') input.dir = 'ltr';
+    // בשדה צר (למשל מספר ת.ז. ארוך בתא צר), אחרי הקלדה ה-input עלול להישאר
+    // "גלול" לתו האחרון גם אחרי סיום העריכה (נצפה בפועל ב-iOS Safari) -
+    // מחזירים לתחילת הטקסט כדי שאפשר יהיה לוודא מה שהוקלד.
+    if (field.type === 'text' || field.type === 'number') {
+      // number type לא תומך ב-setSelectionRange בחלק מהדפדפנים (זורק שגיאה,
+      // לא רק "לא נתמך") - לכן בתוך try/catch ולא בבדיקת truthy בלבד.
+      input.addEventListener('blur', () => {
+        input.scrollLeft = 0;
+        try { input.setSelectionRange(0, 0); } catch (err) {}
+      });
+    }
     box.appendChild(input);
     fieldRuntime[field.id] = {
       isFilled: () => input.value.trim() !== '',

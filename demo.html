@@ -156,7 +156,7 @@ const DEMO_TEMPLATE = {
   fields: [
     { id: 'lastname', type: 'text', page: 0, xPct: 0.529, yPct: 0.26488, wPct: 0.20528, hPct: 0.01425, label: 'שם משפחה', required: true },
     { id: 'firstname', type: 'text', page: 0, xPct: 0.35446, yPct: 0.26488, wPct: 0.17118, hPct: 0.01425, label: 'שם פרטי', required: true },
-    { id: 'idnum', type: 'text', page: 0, xPct: 0.73764, yPct: 0.26488, wPct: 0.16816, hPct: 0.01425, label: 'מספר זהות', required: true },
+    { id: 'idnum', type: 'number', page: 0, xPct: 0.73764, yPct: 0.26488, wPct: 0.16816, hPct: 0.01425, label: 'מספר זהות', required: true },
     { id: 'birthdate', type: 'date', page: 0, xPct: 0.20159, yPct: 0.26488, wPct: 0.14951, hPct: 0.01425, label: 'תאריך לידה', required: true },
     { id: 'date', type: 'date', page: 1, xPct: 0.2367, yPct: 0.75782, wPct: 0.14464, hPct: 0.02019, label: 'תאריך', required: true },
     { id: 'sig', type: 'signature', page: 1, xPct: 0.0588, yPct: 0.73763, wPct: 0.14447, hPct: 0.04039, label: 'חתימת המבקש/ת', required: true }
@@ -211,10 +211,21 @@ function createFillFieldEl(field, rectPx) {
   labelTag.textContent = field.label + (field.required ? ' *' : '');
   box.appendChild(labelTag);
 
-  if (field.type === 'text' || field.type === 'date') {
+  if (field.type === 'text' || field.type === 'date' || field.type === 'number') {
     const input = document.createElement('input');
-    input.type = field.type === 'date' ? 'date' : 'text';
+    input.type = field.type === 'date' ? 'date' : (field.type === 'number' ? 'number' : 'text');
+    if (field.type === 'number') input.inputMode = 'numeric';
     input.className = 'fill-input';
+    // שדה מספרי הוא רצף LTR מעצם טבעו, גם בתוך עמוד RTL - בלי dir="ltr"
+    // מפורש, scrollLeft=0 בתוך תיבה שיורשת RTL מציג בפועל את הסוף של הערך
+    // (לא ההתחלה), מה שגרם לתחושת "המספר נחתך" בטלפון אחרי הקלדה.
+    if (field.type === 'number') input.dir = 'ltr';
+    if (field.type === 'text' || field.type === 'number') {
+      input.addEventListener('blur', () => {
+        input.scrollLeft = 0;
+        try { input.setSelectionRange(0, 0); } catch (err) {}
+      });
+    }
     box.appendChild(input);
     fieldRuntime[field.id] = {
       isFilled: () => input.value.trim() !== '',
