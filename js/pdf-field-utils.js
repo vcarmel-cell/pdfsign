@@ -187,13 +187,33 @@ function attachDateMask(input) {
   });
 }
 
+// מכווץ את גודל הגופן של ה-input (אם וכשצריך) כדי שהערך הנוכחי ייכנס ברוחב
+// הזמין, בלי לחרוג מעל baseFontSizePx (הגודל התואם-מסמך) - כלומר מכווץ רק
+// כשבאמת יש חשש לחיתוך (למשל שדה תאריך/ת.ז. צר במיוחד ברינדור נייד צר), ולא
+// באחוז קבוע שמקטין שדות שממילא נכנסים בשלמותם ברוחב מסך רגיל/רחב.
+function fitOnScreenFontToValue(input, baseFontSizePx, availableWidthPx) {
+  const text = input.value || '';
+  if (!text || availableWidthPx <= 0) { input.style.fontSize = baseFontSizePx + 'px'; return; }
+  const canvas = fitOnScreenFontToValue._canvas || (fitOnScreenFontToValue._canvas = document.createElement('canvas'));
+  const ctx = canvas.getContext('2d');
+  const family = getComputedStyle(input).fontFamily || 'Arial, sans-serif';
+  let size = baseFontSizePx;
+  while (size > 6) {
+    ctx.font = size + 'px ' + family;
+    if (ctx.measureText(text).width <= availableWidthPx) break;
+    size -= 0.5;
+  }
+  input.style.fontSize = size + 'px';
+}
+
 // ─── הרחבת שדה טקסט/מספר/תאריך בזמן עריכה בפועל (focus) ───────────────
 // גודל הגופן הרגיל (baseFontSizePx) מחושב יחסית למסמך ונשאר קטן בכוונה כשהעמוד
 // מוצג מוקטן מאוד במובייל (התאמה ויזואלית לכתב המודפס) - אבל גודל קטן כזה גם
 // לא קריא בזמן הקלדה בפועל וגם עלול לגרום לדפדפני מובייל לזום אוטומטית על
 // העמוד בפוקוס. הפתרון: בפוקוס בלבד מגדילים זמנית לגודל נוח (editFontSizePx)
 // ומרחיבים את ה-input מעבר לגבולות תיבת השדה (התיבה עצמה overflow:visible,
-// כך שההרחבה לא נחתכת); בעזיבת הפוקוס חוזרים בדיוק לגודל/מידות המסמך.
+// כך שההרחבה לא נחתכת); בעזיבת הפוקוס חוזרים למידות המסמך, ומכווצים את הגופן
+// (fitOnScreenFontToValue) רק אם הערך הסופי לא נכנס ברוחב האמיתי של התיבה.
 function attachFocusExpand(input, baseFontSizePx, minWidthPx, editFontSizePx) {
   editFontSizePx = editFontSizePx || 16;
   input.addEventListener('focus', () => {
@@ -206,20 +226,10 @@ function attachFocusExpand(input, baseFontSizePx, minWidthPx, editFontSizePx) {
   input.addEventListener('blur', () => {
     input.style.width = '';
     input.style.minWidth = '';
-    input.style.fontSize = baseFontSizePx + 'px';
     input.style.zIndex = '';
     input.style.boxShadow = '';
+    fitOnScreenFontToValue(input, baseFontSizePx, input.clientWidth - 8);
   });
-}
-
-// שדות מספריים/תאריך הם רצף ספרות צפוף בלי רווחים בין מילים, ולכן בדרך כלל
-// זקוקים ליותר תווים לאותו רוחב-תא מאשר טקסט חופשי - מציגים אותם קצת יותר
-// קטן במסך (לא בהטבעה בפועל, שממשיכה להשתמש ב-field.fontSize המקורי) כדי
-// לצמצם חיתוך בתצוגה במנוחה (הצעת המשתמש: 15% קטן יותר).
-const NUMERIC_FIELD_ON_SCREEN_FACTOR = 0.6;
-function fillInputFontSizePx(field, fontScale) {
-  const factor = (field.type === 'number' || field.type === 'date') ? NUMERIC_FIELD_ON_SCREEN_FACTOR : 1;
-  return field.fontSize * fontScale * factor;
 }
 
 function isValidDateStr(value) {

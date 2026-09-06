@@ -145,7 +145,7 @@
   </section>
 </main>
 
-<script src="js/pdf-field-utils.js?v=1"></script>
+<script src="js/pdf-field-utils.js?v=2"></script>
 <script>
 // תבנית קבועה בקוד (לא מגיעה מ-Firestore) - שדות ממוקמים על form-101.pdf
 // (טופס 101 האמיתי - כרטיס עובד). הקואורדינטות נמדדו מהקווים הווקטוריים
@@ -208,7 +208,7 @@ async function renderFillDocument(bytes) {
       const rectPx = pctRectToPx(field, boxSize.cssWidth, boxSize.cssHeight);
       // גודל הגופן הרגיל (בלי רצפה) נשאר תואם ויזואלית למסמך המוקטן - ההגדלה
       // לגודל קריא נעשית רק בזמן עריכה בפועל, ראו attachFocusExpand למטה.
-      const fontSizePx = fillInputFontSizePx(field, fontScale);
+      const fontSizePx = field.fontSize * fontScale;
       wrapper.appendChild(createFillFieldEl(field, rectPx, fontSizePx));
     }
   }

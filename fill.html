@@ -111,7 +111,7 @@
 </div>
 
 <script src="js/firebase-init.js"></script>
-<script src="js/pdf-field-utils.js?v=1"></script>
+<script src="js/pdf-field-utils.js?v=2"></script>
 <script>
 let db, auth, storage;
 let template = null;
@@ -174,7 +174,7 @@ async function renderFillDocument() {
       const rectPx = pctRectToPx(field, boxSize.cssWidth, boxSize.cssHeight);
       // גודל הגופן הרגיל (בלי רצפה) נשאר תואם ויזואלית למסמך המוקטן - ההגדלה
       // לגודל קריא נעשית רק בזמן עריכה בפועל, ראו attachFocusExpand למטה.
-      const fontSizePx = fillInputFontSizePx(field, fontScale);
+      const fontSizePx = field.fontSize * fontScale;
       wrapper.appendChild(multiSign ? createMultiSignFieldEl(field, rectPx, fontSizePx) : createFillFieldEl(field, rectPx, fontSizePx));
     }
   }
