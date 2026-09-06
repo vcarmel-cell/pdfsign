@@ -160,14 +160,24 @@ async function renderFillDocument() {
     wrapper.style.height = boxSize.cssHeight + 'px';
     pageBoxSizes[i] = boxSize;
 
-    (template.fields || []).filter(f => f.page === i).forEach(field => {
+    // גודל גופן: מזוהה פעם אחת מהטקסט הסמוך במסמך המקורי (ולא גודל קבוע),
+    // ואז מומר מנקודות לפיקסלי CSS לפי אותו יחס קנה-מידה שבו הועמד העמוד -
+    // כך שהכתב במסך מוקטן/מוגדל יחד עם העמוד עצמו, בדיוק כמו הטקסט המודפס סביבו.
+    const fontScale = boxSize.cssWidth / boxSize.pageWidthPt;
+    for (const field of (template.fields || []).filter(f => f.page === i)) {
+      if (!field._autoFontSizeApplied) {
+        const detected = await detectFieldFontSizePt(page, field, boxSize.pageHeightPt);
+        field.fontSize = resolveFieldFontSizePt(detected, field, boxSize.pageHeightPt);
+        field._autoFontSizeApplied = true;
+      }
       const rectPx = pctRectToPx(field, boxSize.cssWidth, boxSize.cssHeight);
-      wrapper.appendChild(multiSign ? createMultiSignFieldEl(field, rectPx) : createFillFieldEl(field, rectPx));
-    });
+      const fontSizePx = field.fontSize * fontScale;
+      wrapper.appendChild(multiSign ? createMultiSignFieldEl(field, rectPx, fontSizePx) : createFillFieldEl(field, rectPx, fontSizePx));
+    }
   }
 }
 
-function createFillFieldEl(field, rectPx) {
+function createFillFieldEl(field, rectPx, fontSizePx) {
   const box = document.createElement('div');
   box.className = 'fill-field-box';
   applyRectPx(box, rectPx);
@@ -182,6 +192,7 @@ function createFillFieldEl(field, rectPx) {
     input.type = field.type === 'date' ? 'date' : (field.type === 'number' ? 'number' : 'text');
     if (field.type === 'number') input.inputMode = 'numeric';
     input.className = 'fill-input';
+    if (fontSizePx) input.style.fontSize = fontSizePx + 'px';
     // שדה מספרי הוא רצף LTR מעצם טבעו, גם בתוך עמוד RTL - בלי dir="ltr"
     // מפורש, scrollLeft=0 בתוך תיבה שיורשת RTL מציג בפועל את הסוף של הערך
     // (לא ההתחלה), מה שגרם לתחושת "המספר נחתך" בטלפון אחרי הקלדה.
@@ -236,15 +247,15 @@ function createFillFieldEl(field, rectPx) {
 
 // ─── שדות במסמך רב-חותמים: ערכים משותפים לקריאה בלבד אחרי שמישהו כבר
 // מילא אותם, וחתימות של חותמים אחרים מוצגות כתמונה (לא ניתנות לעריכה). ───
-function createMultiSignFieldEl(field, rectPx) {
+function createMultiSignFieldEl(field, rectPx, fontSizePx) {
   const sub = multiSign.data;
 
   // זו החתימה שלי, או ערך משותף שעדיין לא מולא - מתנהג בדיוק כמו מצב single רגיל.
   if (field.type === 'signature' && field.id === multiSign.signerFieldId) {
-    return createFillFieldEl(field, rectPx);
+    return createFillFieldEl(field, rectPx, fontSizePx);
   }
   if (field.type !== 'signature' && !(sub.values && Object.prototype.hasOwnProperty.call(sub.values, field.id))) {
-    return createFillFieldEl(field, rectPx);
+    return createFillFieldEl(field, rectPx, fontSizePx);
   }
 
   // אחרת: שדה לקריאה בלבד (כבר מולא/נחתם ע"י מישהו אחר).
@@ -272,6 +283,7 @@ function createMultiSignFieldEl(field, rectPx) {
   } else {
     const readonly = document.createElement('div');
     readonly.className = 'fill-readonly-value';
+    if (fontSizePx) readonly.style.fontSize = fontSizePx + 'px';
     readonly.textContent = field.type === 'checkbox' ? (sub.values[field.id] ? '✓' : '—') : String(sub.values[field.id]);
     box.appendChild(readonly);
   }

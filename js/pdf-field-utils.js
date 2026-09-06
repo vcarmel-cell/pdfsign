@@ -132,6 +132,43 @@ function pctFieldToPdfCoords(field, pageWidthPt, pageHeightPt) {
   return { xPt, yPt, wPt, hPt };
 }
 
+// ─── זיהוי גודל הגופן של הטקסט הקרוב במסמך המקורי (getTextContent של pdf.js),
+// כדי שהטקסט שממלאים/מטביעים בשדה יתאים בגודלו לכתב של המסמך עצמו במקום
+// גודל אחיד קבוע לכל השדות בלי קשר לגודל האמיתי של הכתב סביב השדה. ─────
+async function detectFieldFontSizePt(page, field, pageHeightPt) {
+  try {
+    const textContent = await page.getTextContent();
+    const yTopPt = field.yPct * pageHeightPt;
+    const yBottomPt = yTopPt + field.hPct * pageHeightPt;
+    const sizes = [];
+    for (const item of textContent.items) {
+      if (!item.str || !item.str.trim()) continue;
+      // transform=[a,b,c,d,e,f]; עבור טקסט לא-מסובב |d| הוא גובה הגופן בנקודות,
+      // ו-(e,f) מקור קו הבייסליין במרחב ה-PDF (0,0 בפינה שמאל-תחתונה).
+      const fontSizePt = Math.abs(item.transform[3]) || Math.abs(item.transform[0]);
+      if (!fontSizePt) continue;
+      const baselineYPt = pageHeightPt - item.transform[5]; // המרה לטופ-לפט, כמו yPct
+      if (baselineYPt >= yTopPt - fontSizePt * 1.5 && baselineYPt <= yBottomPt + fontSizePt * 0.5) {
+        sizes.push(fontSizePt);
+      }
+    }
+    if (!sizes.length) return null;
+    sizes.sort((a, b) => a - b);
+    return sizes[Math.floor(sizes.length / 2)]; // חציון - עמיד מול פריט חריג בודד
+  } catch (err) {
+    return null;
+  }
+}
+
+// גודל גופן סופי לשדה: זיהוי אוטומטי מהמסמך, עם נפילה לגודל יחסי לגובה השדה
+// עצמו (לא לגודל קבוע) אם לא נמצא טקסט קרוב, ותקרה שלא תחרוג מגובה השדה.
+function resolveFieldFontSizePt(detectedPt, field, pageHeightPt) {
+  const heightPt = field.hPct * pageHeightPt;
+  const fallback = Math.max(6, Math.min(14, heightPt * 0.6));
+  if (!detectedPt) return fallback;
+  return Math.max(6, Math.min(detectedPt, heightPt * 0.95));
+}
+
 // ─── רינדור טקסט עברי כתמונה (עוקף בעיות קידוד גופנים ב-PDF) ───
 // משותף ל-fill.html (מילוי רגיל) ול-admin.html (כפתור "נסה שוב להשלים").
 function renderTextToPngDataUrl(text, widthPt, heightPt, fontSizePt) {
