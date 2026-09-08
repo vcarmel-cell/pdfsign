@@ -1,0 +1,15 @@
+{
+  "name": "PDFSign",
+  "short_name": "PDFSign",
+  "start_url": "./admin.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1c232b",
+  "theme_color": "#1c232b",
+  "dir": "rtl",
+  "lang": "he",
+  "icons": [
+    { "src": "icon.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
