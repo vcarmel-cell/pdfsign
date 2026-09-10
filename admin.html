@@ -1421,9 +1421,11 @@ function renderUsersList(users) {
           ' · ' + (u.tier === 'premium' ? 'פרימיום' : 'רגיל') + '</span>' +
       '</div>' +
       '<button type="button" class="u-toggle ' + (u.active !== false ? 'danger' : '') + '">' + (u.active !== false ? 'בטל גישה' : 'הפעל מחדש') + '</button>' +
-      '<button type="button" class="u-tier-toggle">' + (u.tier === 'premium' ? 'הסר פרימיום' : 'הפוך לפרימיום') + '</button>';
+      '<button type="button" class="u-tier-toggle">' + (u.tier === 'premium' ? 'הסר פרימיום' : 'הפוך לפרימיום') + '</button>' +
+      '<button type="button" class="secondary u-reset-password">איפוס סיסמה</button>';
     row.querySelector('.u-toggle').addEventListener('click', () => setUserActive(u.id, u.active === false));
     row.querySelector('.u-tier-toggle').addEventListener('click', () => setUserTier(u.id, u.tier === 'premium' ? 'regular' : 'premium'));
+    row.querySelector('.u-reset-password').addEventListener('click', () => sendUserPasswordReset(u.email));
     list.appendChild(row);
   });
 }
@@ -1487,6 +1489,19 @@ async function setUserTier(uid, tier) {
     await loadUsersList();
   } catch (err) {
     alert('שגיאה בעדכון המשתמש: ' + err.message);
+  }
+}
+
+// איפוס סיסמה למשתמש קיים - Firebase Auth בצד הלקוח לא מאפשר למנהל לקבוע
+// סיסמה חדשה ישירות (זו הרשאת Admin SDK בלבד), אז שולחים למשתמש מייל רשמי
+// עם קישור לבחירת סיסמה חדשה בעצמו, בדיוק כמו "שכחתי סיסמה" בכל שירות אחר.
+async function sendUserPasswordReset(email) {
+  if (!confirm('לשלוח ל-' + email + ' מייל לאיפוס סיסמה?')) return;
+  try {
+    await auth.sendPasswordResetEmail(email);
+    alert('מייל איפוס סיסמה נשלח ל-' + email + '.');
+  } catch (err) {
+    alert('שגיאה בשליחת מייל איפוס: ' + err.message);
   }
 }
 
