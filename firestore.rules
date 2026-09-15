@@ -45,11 +45,15 @@ service cloud.firestore {
         // עדכון מצומצם של submissionCount בלבד, בדיוק ב-1 - מאפשר גם לבעל
         // החשבון (במחיקת הגשה) וגם לכל מחובר אחר (ממלא אנונימי, ביצירת
         // הגשה חדשה) לעדכן את המונה, בלי לגעת בשום שדה אחר במסמך.
+        // .get(key, 0) ולא .submissionCount ישירות - למשתמש שמעולם לא הייתה
+        // לו הגשה השדה פשוט לא קיים במסמך, וחיבור/חיסור על ערך חסר (null)
+        // גורם לשגיאת הרצה בחוקים שנראית כמו "Missing or insufficient
+        // permissions" בלקוח, גם שהבקשה עצמה תקינה לגמרי.
         signedIn()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['submissionCount'])
         && (
-          (request.auth.uid == userId && request.resource.data.submissionCount == resource.data.submissionCount - 1)
-          || request.resource.data.submissionCount == resource.data.submissionCount + 1
+          (request.auth.uid == userId && request.resource.data.submissionCount == resource.data.get('submissionCount', 0) - 1)
+          || request.resource.data.submissionCount == resource.data.get('submissionCount', 0) + 1
         )
       );
       allow delete: if isAdmin();

@@ -1537,6 +1537,7 @@ document.getElementById('create-user-form').addEventListener('submit', async (e)
     });
     await db.collection('users').doc(uid).set({
       uid: uid, email: email, role: 'user', active: true, notifyEmail: email,
+      submissionCount: 0,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser.uid
     });
