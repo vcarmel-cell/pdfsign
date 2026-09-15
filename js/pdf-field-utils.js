@@ -16,10 +16,28 @@ const EMAILJS_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist
 const FIELD_TYPE_LABELS = {
   text: 'טקסט',
   number: 'מספר',
+  id: 'תעודת זהות',
   date: 'תאריך',
   checkbox: 'תיבת סימון',
   signature: 'חתימה'
 };
+
+// ─── אימות מספר תעודת זהות ישראלי (ספרת ביקורת) ───────────────────────
+// אלגוריתם התקן: כל ספרה (אחרי השלמה ל-9 ספרות עם אפסים מובילים) מוכפלת
+// לסירוגין ב-1/2; תוצאה דו-ספרתית מצטמצמת לסכום ספרותיה (שקול לחיסור 9);
+// המספר תקין אם סכום כל הערכים מתחלק ב-10 ללא שארית.
+function isValidIsraeliId(value) {
+  const digits = (value || '').replace(/\D/g, '');
+  if (!digits || digits.length > 9) return false;
+  const id = digits.padStart(9, '0');
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    let num = Number(id[i]) * ((i % 2) + 1);
+    if (num > 9) num -= 9;
+    sum += num;
+  }
+  return sum % 10 === 0;
+}
 
 // pdf.js מגרסה 4 ואילך מופץ רק כ-ES module, ולכן טוענים אותו ב-import() דינמי
 // (עובד גם מתוך script רגיל, לא רק type="module") במקום script tag רגיל.
@@ -177,6 +195,14 @@ function resolveFieldFontSizePt(detectedPt, field, pageHeightPt) {
 // בעברית מציג "16 בספט' 2026" גם כשהערך הפנימי ISO תקין) - כך שהתצוגה בזמן
 // המילוי לא הייתה עקבית בין מכשירים ולא תואמת לפורמט שמוטבע בפועל במסמך.
 // טקסט חופשי עם מסכה נותן שליטה מלאה על התצוגה בכל מכשיר/דפדפן.
+// מסנן תווים שאינם ספרות תוך כדי הקלדה, עד אורך מקסימלי נתון - משמש לשדה
+// תעודת זהות (ללא נקודות/מקפים, בניגוד למסכת התאריך).
+function attachDigitsOnlyMask(input, maxLen) {
+  input.addEventListener('input', () => {
+    input.value = input.value.replace(/\D/g, '').slice(0, maxLen);
+  });
+}
+
 function attachDateMask(input) {
   input.addEventListener('input', () => {
     const digits = input.value.replace(/\D/g, '').slice(0, 8);

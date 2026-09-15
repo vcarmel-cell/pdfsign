@@ -15,7 +15,7 @@ const ALLOWED_ORIGINS = ['https://vcarmel-cell.github.io'];
 // מודלים מוצמדים מתיישנים/מפסיקים להיות זמינים עם הזמן (ראינו את זה בפועל).
 const GEMINI_MODEL = 'gemini-flash-latest';
 
-const FIELD_TYPES = ['text', 'number', 'date', 'checkbox', 'signature'];
+const FIELD_TYPES = ['text', 'number', 'id', 'date', 'checkbox', 'signature'];
 
 const FIELDS_SCHEMA = {
   type: 'ARRAY',
@@ -46,7 +46,8 @@ empty boxes, checkbox glyphs (☐/⬜/[ ])) and return a JSON array. For each on
   date-like label (e.g. "תאריך") -> "date";
   signature-like label (e.g. "חתימה") -> "signature";
   a checkbox glyph -> "checkbox";
-  clearly numeric fields (ת.ז./טלפון/סכום/מספר) -> "number";
+  Israeli ID number label (e.g. "ת.ז.", "מספר זהות", "תעודת זהות") -> "id";
+  other clearly numeric fields (טלפון/סכום/מספר) -> "number";
   otherwise -> "text"
 Only include blanks meant for the form-filler to write in - ignore printed body
 text, titles, and already-filled example text. Coordinates must stay within [0,1].`;

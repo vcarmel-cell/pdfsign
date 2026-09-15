@@ -113,7 +113,7 @@
 </div>
 
 <script src="js/firebase-init.js"></script>
-<script src="js/pdf-field-utils.js?v=3"></script>
+<script src="js/pdf-field-utils.js?v=4"></script>
 <script>
 let db, auth, storage;
 let template = null;
@@ -217,16 +217,16 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
   // חשובים מהמסמך המקורי; מיקום השדה כבר מדויק מעל התיאור המודפס בפועל.
   box.title = field.label + (field.required ? ' *' : '');
 
-  if (field.type === 'text' || field.type === 'date' || field.type === 'number') {
+  if (field.type === 'text' || field.type === 'date' || field.type === 'number' || field.type === 'id') {
     const input = document.createElement('input');
     input.type = field.type === 'number' ? 'number' : 'text';
     if (field.type === 'number') input.inputMode = 'numeric';
     input.className = 'fill-input';
     if (fontSizePx) input.style.fontSize = fontSizePx + 'px';
-    // שדה מספרי/תאריך הוא רצף LTR מעצם טבעו, גם בתוך עמוד RTL - בלי dir="ltr"
-    // מפורש, scrollLeft=0 בתוך תיבה שיורשת RTL מציג בפועל את הסוף של הערך
-    // (לא ההתחלה), מה שגרם לתחושת "המספר נחתך" בטלפון אחרי הקלדה.
-    if (field.type === 'number' || field.type === 'date') input.dir = 'ltr';
+    // שדה מספרי/תאריך/ת.ז. הוא רצף LTR מעצם טבעו, גם בתוך עמוד RTL - בלי
+    // dir="ltr" מפורש, scrollLeft=0 בתוך תיבה שיורשת RTL מציג בפועל את הסוף
+    // של הערך (לא ההתחלה), מה שגרם לתחושת "המספר נחתך" בטלפון אחרי הקלדה.
+    if (field.type === 'number' || field.type === 'date' || field.type === 'id') input.dir = 'ltr';
     if (field.type === 'date') {
       // <input type="date"> מציג את הערך לפי הלוקאל של המכשיר/דפדפן (למשל
       // אייפון בעברית מציג "16 בספט' 2026" גם כשהערך הפנימי תקין) - טקסט חופשי
@@ -236,10 +236,22 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
       input.maxLength = 10;
       attachDateMask(input);
     }
+    if (field.type === 'id') {
+      // type="text" ולא type="number" - צריך לשמר אפסים מובילים (ת.ז. עם
+      // 7-8 ספרות בפועל מוצגת/מוטבעת עם אפסים מובילים ל-9 ספרות), וגם למנוע
+      // את חצי ה-spinner שלא רלוונטיים למספר זהות.
+      input.inputMode = 'numeric';
+      input.maxLength = 9;
+      attachDigitsOnlyMask(input, 9);
+      input.addEventListener('blur', () => {
+        const digits = input.value.replace(/\D/g, '');
+        if (digits && isValidIsraeliId(digits)) input.value = digits.padStart(9, '0');
+      });
+    }
     // בשדה צר (למשל מספר ת.ז. ארוך בתא צר), אחרי הקלדה ה-input עלול להישאר
     // "גלול" לתו האחרון גם אחרי סיום העריכה (נצפה בפועל ב-iOS Safari) -
     // מחזירים לתחילת הטקסט כדי שאפשר יהיה לוודא מה שהוקלד.
-    if (field.type === 'text' || field.type === 'number' || field.type === 'date') {
+    if (field.type === 'text' || field.type === 'number' || field.type === 'date' || field.type === 'id') {
       // number type לא תומך ב-setSelectionRange בחלק מהדפדפנים (זורק שגיאה,
       // לא רק "לא נתמך") - לכן בתוך try/catch ולא בבדיקת truthy בלבד.
       input.addEventListener('blur', () => {
@@ -249,8 +261,10 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
       // שדה שממוקם מעל תא צר במסמך (למשל ת.ז./תאריך) עלול להיות צר מכדי
       // להציג ערך מלא בגודל גופן קריא - מגדילים ומרחיבים בפועל בזמן עריכה בלבד.
       attachFocusExpand(input, fontSizePx, 130);
-      // דילוג אוטומטי לשדה הבא: Enter בכל שדה, והשלמת תאריך (10 תווים) בלי
-      // צורך ב-Enter - מקל על מילוי רציף כמו בטופסי OTP/תשלום.
+      // דילוג אוטומטי לשדה הבא: Enter בכל שדה, והשלמת תאריך (10 תווים) או
+      // ת.ז. (9 ספרות) בלי צורך ב-Enter - מקל על מילוי רציף כמו בטופסי
+      // OTP/תשלום. ת.ז. מתבסס על אורך ולא על תקינות ספרת הביקורת - מספר
+      // חלקי עלול "לעבור" את הבדיקה במקרה במהלך ההקלדה (ריפוד באפסים).
       input.enterKeyHint = 'next';
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); focusNextField(field.id); }
@@ -260,11 +274,20 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
           if (isValidDateStr(input.value.trim())) focusNextField(field.id);
         });
       }
+      if (field.type === 'id') {
+        input.addEventListener('input', () => {
+          if (input.value.length === 9) focusNextField(field.id);
+        });
+      }
     }
     box.appendChild(input);
     fieldElements[field.id] = input;
     fieldRuntime[field.id] = {
-      isFilled: () => field.type === 'date' ? isValidDateStr(input.value.trim()) : input.value.trim() !== '',
+      isFilled: () => {
+        if (field.type === 'date') return isValidDateStr(input.value.trim());
+        if (field.type === 'id') return isValidIsraeliId(input.value.trim());
+        return input.value.trim() !== '';
+      },
       getStamp: () => ({ kind: 'text', value: input.value.trim() })
     };
   } else if (field.type === 'checkbox') {
