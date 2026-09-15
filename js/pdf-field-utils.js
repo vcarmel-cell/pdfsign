@@ -191,19 +191,36 @@ function attachDateMask(input) {
 // הזמין, בלי לחרוג מעל baseFontSizePx (הגודל התואם-מסמך) - כלומר מכווץ רק
 // כשבאמת יש חשש לחיתוך (למשל שדה תאריך/ת.ז. צר במיוחד ברינדור נייד צר), ולא
 // באחוז קבוע שמקטין שדות שממילא נכנסים בשלמותם ברוחב מסך רגיל/רחב.
+// אם גם בגודל הגופן המינימלי הערך עדיין לא נכנס - מרחיבים את ה-input עצמו
+// מעבר לרוחב תיבת השדה במסמך (במקום לחתוך את הטקסט ולהוסיף "..."): הערך
+// המלא תמיד קודם לדיוק הוויזואלי מול המסגרת המקורית.
 function fitOnScreenFontToValue(input, baseFontSizePx, availableWidthPx) {
+  input.style.minWidth = '';
   const text = input.value || '';
   if (!text || availableWidthPx <= 0) { input.style.fontSize = baseFontSizePx + 'px'; return; }
   const canvas = fitOnScreenFontToValue._canvas || (fitOnScreenFontToValue._canvas = document.createElement('canvas'));
   const ctx = canvas.getContext('2d');
   const family = getComputedStyle(input).fontFamily || 'Arial, sans-serif';
+  const minSize = 8;
   let size = baseFontSizePx;
-  while (size > 6) {
+  while (size > minSize) {
     ctx.font = size + 'px ' + family;
     if (ctx.measureText(text).width <= availableWidthPx) break;
     size -= 0.5;
   }
   input.style.fontSize = size + 'px';
+  ctx.font = size + 'px ' + family;
+  const neededWidthPx = ctx.measureText(text).width + 10;
+  if (neededWidthPx <= availableWidthPx) return;
+  // min-width ולא width רגיל - שדה בתוך תיבה עם display:flex יתכווץ בחזרה
+  // ל-flex-shrink גם עם width מפורש; min-width הוא רצפה שגמישות לא שוברת.
+  input.style.minWidth = neededWidthPx + 'px';
+  // ההערכה מ-canvas.measureText לא תמיד תואמת בדיוק לרינדור האמיתי של input
+  // (הבדלי גופן/ריווח בין מנוע ה-canvas למנוע הטופס) - סוגרים כל פער שנותר
+  // מול המדידה האמיתית של הדפדפן (scrollWidth) כדי שהערך תמיד ייכנס במלואו.
+  for (let i = 0; i < 20 && input.scrollWidth > input.clientWidth; i++) {
+    input.style.minWidth = (parseFloat(input.style.minWidth) + (input.scrollWidth - input.clientWidth) + 2) + 'px';
+  }
 }
 
 // ─── הרחבת שדה טקסט/מספר/תאריך בזמן עריכה בפועל (focus) ───────────────
