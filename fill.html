@@ -597,6 +597,12 @@ async function init() {
     emailjs.init({ publicKey: EMAILJS_CONFIG.publicKey });
   }
 
+  // הרשמה אנונימית מבודדת לטאב הזה בלבד (SESSION, לא ברירת המחדל LOCAL) -
+  // ה-persistence הרגילה משותפת בין כל הטאבים של אותו מקור, כך שאם מישהו
+  // ממלא טופס בטאב אחד בזמן שהוא מחובר כמנהל/משתמש ב-admin.html בטאב אחר
+  // (אותו דפדפן), שני הטאבים "נלחמים" על אותו auth state המשותף - מה שגרם
+  // בפועל ל-permission-denied לא עקבי בשליחה (נפתר כשסגרו את טאב האדמין).
+  await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
   await auth.signInAnonymously();
 
   const doc = await db.collection('templates').doc(templateId).get();
