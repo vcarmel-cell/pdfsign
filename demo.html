@@ -35,6 +35,7 @@
   .page-wrapper canvas { display: block; }
 
   .fill-field-box { position: absolute; display: flex; align-items: center; }
+  .fill-field-box.required-field { outline: 2px solid var(--danger); outline-offset: 1px; border-radius: 3px; }
   .fill-input {
     width: 100%; height: 24px; max-height: 100%; border: 1px solid var(--primary); border-radius: 3px;
     padding: 0 4px; font-size: 12px; background: rgba(37,99,235,.06); box-sizing: border-box; font-family: inherit;
@@ -242,6 +243,9 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
   // אין תווית מרחפת מעל השדה (כמו בעבר) - בשדות צפופים היא הסתירה חלקים
   // חשובים מהמסמך המקורי; מיקום השדה כבר מדויק מעל התיאור המודפס בפועל.
   box.title = field.label + (field.required ? ' *' : '');
+  // שדות חובה מסומנים באדום (outline סביב התיבה, לא border - כדי לא להתנגש
+  // עם המסגרת/רקע הפנימיים של ה-input/canvas ולא לשנות את מידות התיבה).
+  if (field.required) box.classList.add('required-field');
 
   if (field.type === 'text' || field.type === 'date' || field.type === 'number' || field.type === 'id' || field.type === 'phone') {
     const input = document.createElement('input');
