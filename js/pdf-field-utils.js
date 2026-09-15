@@ -17,6 +17,7 @@ const FIELD_TYPE_LABELS = {
   text: 'טקסט',
   number: 'מספר',
   id: 'תעודת זהות',
+  phone: 'טלפון נייד',
   date: 'תאריך',
   checkbox: 'תיבת סימון',
   signature: 'חתימה'
@@ -37,6 +38,25 @@ function isValidIsraeliId(value) {
     sum += num;
   }
   return sum % 10 === 0;
+}
+
+// ─── אימות מספר טלפון נייד ישראלי - תבנית 000-0000000 ─────────────────
+// 10 ספרות בדיוק, מתחיל תמיד ב-05 (קידומת סלולר ישראלית) + ספרה שלישית
+// (מזהה ספק) + 7 ספרות מנוי.
+function isValidIsraeliMobile(value) {
+  const digits = (value || '').replace(/\D/g, '');
+  return /^05\d{8}$/.test(digits);
+}
+
+// מסכת טלפון: מוסיף מקף אוטומטית אחרי 3 ספרות (000-0000000), בדומה למסכת
+// התאריך.
+function attachPhoneMask(input) {
+  input.addEventListener('input', () => {
+    const digits = input.value.replace(/\D/g, '').slice(0, 10);
+    let out = digits.slice(0, 3);
+    if (digits.length > 3) out += '-' + digits.slice(3, 10);
+    input.value = out;
+  });
 }
 
 // pdf.js מגרסה 4 ואילך מופץ רק כ-ES module, ולכן טוענים אותו ב-import() דינמי

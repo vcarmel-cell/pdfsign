@@ -113,7 +113,7 @@
 </div>
 
 <script src="js/firebase-init.js"></script>
-<script src="js/pdf-field-utils.js?v=4"></script>
+<script src="js/pdf-field-utils.js?v=5"></script>
 <script>
 let db, auth, storage;
 let template = null;
@@ -217,16 +217,16 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
   // חשובים מהמסמך המקורי; מיקום השדה כבר מדויק מעל התיאור המודפס בפועל.
   box.title = field.label + (field.required ? ' *' : '');
 
-  if (field.type === 'text' || field.type === 'date' || field.type === 'number' || field.type === 'id') {
+  if (field.type === 'text' || field.type === 'date' || field.type === 'number' || field.type === 'id' || field.type === 'phone') {
     const input = document.createElement('input');
     input.type = field.type === 'number' ? 'number' : 'text';
     if (field.type === 'number') input.inputMode = 'numeric';
     input.className = 'fill-input';
     if (fontSizePx) input.style.fontSize = fontSizePx + 'px';
-    // שדה מספרי/תאריך/ת.ז. הוא רצף LTR מעצם טבעו, גם בתוך עמוד RTL - בלי
-    // dir="ltr" מפורש, scrollLeft=0 בתוך תיבה שיורשת RTL מציג בפועל את הסוף
-    // של הערך (לא ההתחלה), מה שגרם לתחושת "המספר נחתך" בטלפון אחרי הקלדה.
-    if (field.type === 'number' || field.type === 'date' || field.type === 'id') input.dir = 'ltr';
+    // שדה מספרי/תאריך/ת.ז./טלפון הוא רצף LTR מעצם טבעו, גם בתוך עמוד RTL -
+    // בלי dir="ltr" מפורש, scrollLeft=0 בתוך תיבה שיורשת RTL מציג בפועל את
+    // הסוף של הערך (לא ההתחלה), מה שגרם לתחושת "המספר נחתך" בטלפון אחרי הקלדה.
+    if (field.type === 'number' || field.type === 'date' || field.type === 'id' || field.type === 'phone') input.dir = 'ltr';
     if (field.type === 'date') {
       // <input type="date"> מציג את הערך לפי הלוקאל של המכשיר/דפדפן (למשל
       // אייפון בעברית מציג "16 בספט' 2026" גם כשהערך הפנימי תקין) - טקסט חופשי
@@ -248,10 +248,18 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
         if (digits && isValidIsraeliId(digits)) input.value = digits.padStart(9, '0');
       });
     }
+    if (field.type === 'phone') {
+      // תבנית 000-0000000 (קידומת סלולר תלת-ספרתית + 7 ספרות מנוי) - מקף
+      // מתווסף אוטומטית ע"י attachPhoneMask, לא מוקלד ע"י המשתמש.
+      input.inputMode = 'numeric';
+      input.placeholder = '050-1234567';
+      input.maxLength = 11;
+      attachPhoneMask(input);
+    }
     // בשדה צר (למשל מספר ת.ז. ארוך בתא צר), אחרי הקלדה ה-input עלול להישאר
     // "גלול" לתו האחרון גם אחרי סיום העריכה (נצפה בפועל ב-iOS Safari) -
     // מחזירים לתחילת הטקסט כדי שאפשר יהיה לוודא מה שהוקלד.
-    if (field.type === 'text' || field.type === 'number' || field.type === 'date' || field.type === 'id') {
+    if (field.type === 'text' || field.type === 'number' || field.type === 'date' || field.type === 'id' || field.type === 'phone') {
       // number type לא תומך ב-setSelectionRange בחלק מהדפדפנים (זורק שגיאה,
       // לא רק "לא נתמך") - לכן בתוך try/catch ולא בבדיקת truthy בלבד.
       input.addEventListener('blur', () => {
@@ -261,10 +269,10 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
       // שדה שממוקם מעל תא צר במסמך (למשל ת.ז./תאריך) עלול להיות צר מכדי
       // להציג ערך מלא בגודל גופן קריא - מגדילים ומרחיבים בפועל בזמן עריכה בלבד.
       attachFocusExpand(input, fontSizePx, 130);
-      // דילוג אוטומטי לשדה הבא: Enter בכל שדה, והשלמת תאריך (10 תווים) או
-      // ת.ז. (9 ספרות) בלי צורך ב-Enter - מקל על מילוי רציף כמו בטופסי
-      // OTP/תשלום. ת.ז. מתבסס על אורך ולא על תקינות ספרת הביקורת - מספר
-      // חלקי עלול "לעבור" את הבדיקה במקרה במהלך ההקלדה (ריפוד באפסים).
+      // דילוג אוטומטי לשדה הבא: Enter בכל שדה, והשלמת תאריך/ת.ז./טלפון בלי
+      // צורך ב-Enter - מקל על מילוי רציף כמו בטופסי OTP/תשלום. ת.ז. מתבסס
+      // על אורך ולא על תקינות ספרת הביקורת - מספר חלקי עלול "לעבור" את
+      // הבדיקה במקרה במהלך ההקלדה (ריפוד באפסים).
       input.enterKeyHint = 'next';
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); focusNextField(field.id); }
@@ -279,6 +287,11 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
           if (input.value.length === 9) focusNextField(field.id);
         });
       }
+      if (field.type === 'phone') {
+        input.addEventListener('input', () => {
+          if (input.value.length === 11) focusNextField(field.id);
+        });
+      }
     }
     box.appendChild(input);
     fieldElements[field.id] = input;
@@ -286,6 +299,7 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
       isFilled: () => {
         if (field.type === 'date') return isValidDateStr(input.value.trim());
         if (field.type === 'id') return isValidIsraeliId(input.value.trim());
+        if (field.type === 'phone') return isValidIsraeliMobile(input.value.trim());
         return input.value.trim() !== '';
       },
       getStamp: () => ({ kind: 'text', value: input.value.trim() })

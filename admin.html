@@ -284,6 +284,7 @@
         <button type="button" class="tool-btn" data-type="text">+ טקסט</button>
         <button type="button" class="tool-btn" data-type="number">+ מספר</button>
         <button type="button" class="tool-btn" data-type="id">+ ת.ז.</button>
+        <button type="button" class="tool-btn" data-type="phone">+ טלפון נייד</button>
         <button type="button" class="tool-btn" data-type="date">+ תאריך</button>
         <button type="button" class="tool-btn" data-type="checkbox">+ תיבת סימון</button>
         <button type="button" class="tool-btn" data-type="signature">+ חתימה</button>
@@ -310,7 +311,7 @@
 </main>
 
 <script src="js/firebase-init.js"></script>
-<script src="js/pdf-field-utils.js?v=4"></script>
+<script src="js/pdf-field-utils.js?v=5"></script>
 <script>
 let db, auth, storage, currentUser = null;
 let currentRole = null;        // 'admin' | 'user'
@@ -851,7 +852,7 @@ function onDrawEnd(e) {
   let left = Math.min(drawState.startX, curX), top = Math.min(drawState.startY, curY);
   let width = Math.abs(curX - drawState.startX), height = Math.abs(curY - drawState.startY);
 
-  const defaults = { text: [140, 22], number: [90, 22], id: [110, 22], date: [110, 22], checkbox: [24, 24], signature: [180, 60] };
+  const defaults = { text: [140, 22], number: [90, 22], id: [110, 22], phone: [120, 22], date: [110, 22], checkbox: [24, 24], signature: [180, 60] };
   if (width < 10 || height < 10) { [width, height] = defaults[editorState.activeToolType]; }
 
   const boxSize = editorState.pageBoxSizes[drawState.pageIndex];
