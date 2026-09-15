@@ -168,6 +168,9 @@ const DEMO_TEMPLATE = {
 
 let pdfDocJs = null;
 let fieldRuntime = {};
+// ראו fill.html - אותו מנגנון דילוג אוטומטי בין שדות (Enter/השלמת תאריך).
+let fieldElements = {};
+let fillOrderFieldIds = [];
 let flattenedBytesCache = null;
 
 function showView(name) {
@@ -181,6 +184,8 @@ async function renderFillDocument(bytes) {
   const container = document.getElementById('fill-pages');
   container.innerHTML = '';
   fieldRuntime = {};
+  fieldElements = {};
+  fillOrderFieldIds = [];
 
   for (let i = 0; i < DEMO_TEMPLATE.pageCount; i++) {
     const page = await pdfDocJs.getPage(i + 1);
@@ -207,12 +212,26 @@ async function renderFillDocument(bytes) {
         field.fontSize = resolveFieldFontSizePt(detected, field, boxSize.pageHeightPt);
         field._autoFontSizeApplied = true;
       }
+      fillOrderFieldIds.push(field.id);
       const rectPx = pctRectToPx(field, boxSize.cssWidth, boxSize.cssHeight);
       // גודל הגופן הרגיל (בלי רצפה) נשאר תואם ויזואלית למסמך המוקטן - ההגדלה
       // לגודל קריא נעשית רק בזמן עריכה בפועל, ראו attachFocusExpand למטה.
       const fontSizePx = field.fontSize * fontScale;
       wrapper.appendChild(createFillFieldEl(field, rectPx, fontSizePx));
     }
+  }
+}
+
+// ראו fill.html - דילוג אוטומטי לשדה הבא לפי סדר ההופעה הוויזואלי בפועל.
+function focusNextField(currentFieldId) {
+  const idx = fillOrderFieldIds.indexOf(currentFieldId);
+  if (idx === -1) return;
+  for (let i = idx + 1; i < fillOrderFieldIds.length; i++) {
+    const el = fieldElements[fillOrderFieldIds[i]];
+    if (!el) continue;
+    if (el.tagName === 'CANVAS') el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    else el.focus();
+    return;
   }
 }
 
@@ -251,8 +270,20 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
       // שדה שממוקם מעל תא צר במסמך (למשל ת.ז./תאריך) עלול להיות צר מכדי
       // להציג ערך מלא בגודל גופן קריא - מגדילים ומרחיבים בפועל בזמן עריכה בלבד.
       attachFocusExpand(input, fontSizePx, 130);
+      // דילוג אוטומטי לשדה הבא: Enter בכל שדה, והשלמת תאריך (10 תווים) בלי
+      // צורך ב-Enter - מקל על מילוי רציף כמו בטופסי OTP/תשלום.
+      input.enterKeyHint = 'next';
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); focusNextField(field.id); }
+      });
+      if (field.type === 'date') {
+        input.addEventListener('input', () => {
+          if (isValidDateStr(input.value.trim())) focusNextField(field.id);
+        });
+      }
     }
     box.appendChild(input);
+    fieldElements[field.id] = input;
     fieldRuntime[field.id] = {
       isFilled: () => field.type === 'date' ? isValidDateStr(input.value.trim()) : input.value.trim() !== '',
       getStamp: () => ({ kind: 'text', value: input.value.trim() })
@@ -261,6 +292,7 @@ function createFillFieldEl(field, rectPx, fontSizePx) {
     const canvas = document.createElement('canvas');
     canvas.className = 'signature-canvas';
     box.appendChild(canvas);
+    fieldElements[field.id] = canvas;
     const clearBtn = document.createElement('button');
     clearBtn.type = 'button';
     clearBtn.className = 'sig-clear-btn';
