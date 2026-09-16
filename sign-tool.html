@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>חתימה על PDF</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icon.svg" />
+<style>
+  :root { --primary: #2563eb; --primary-dark: #1d4ed8; --danger: #dc2626; --border: #d1d5db; --bg: #f3f4f6; --text: #111827; --text-muted: #6b7280; }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+  header { background: #111827; color: white; padding: .9rem 1.2rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  header a { color: #93c5fd; font-size: .85rem; text-decoration: none; }
+  .header-logo { height: 5.2rem; width: auto; border-radius: 6px; background: #ffffff; padding: .2rem .5rem; }
+  .tool-banner {
+    background: #eff6ff; color: #1d4ed8; text-align: center; font-size: .85rem;
+    padding: .6rem 1rem;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 1rem 1rem 2rem 1rem; }
+  .card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 1.4rem; max-width: 480px; margin: 3rem auto; text-align: center; }
+  .card h2 { margin-top: 0; }
+  .card p { color: var(--text-muted); }
+  button { background: var(--primary); color: white; border: none; border-radius: 6px; padding: .6rem 1.1rem; font-size: .95rem; cursor: pointer; }
+  button:hover { background: var(--primary-dark); }
+  button.secondary { background: white; color: var(--text); border: 1px solid var(--border); }
+  button.danger { background: var(--danger); }
+  button:disabled { opacity: .5; cursor: default; }
+  input[type=file] { display: block; margin: 1rem auto; }
+  .error { color: var(--danger); font-size: .88rem; }
+
+  .stamp-toolbar {
+    display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem;
+    background: white; border: 1px solid var(--border); border-radius: 10px; padding: .8rem;
+    position: sticky; top: 0; z-index: 20;
+  }
+  .stamp-toolbar button { font-size: .85rem; padding: .5rem .8rem; }
+  .placing-hint {
+    background: #fef3c7; color: #92400e; border-radius: 6px; padding: .5rem .8rem;
+    font-size: .85rem; display: flex; align-items: center; gap: .6rem; flex: 1;
+  }
+
+  .page-wrapper { position: relative; margin: 0 auto 1.2rem auto; background: #fff; border: 1px solid var(--border); }
+  .page-wrapper canvas { display: block; }
+
+  .stamp-box {
+    position: absolute; cursor: move; touch-action: none;
+    outline: 1.5px dashed var(--primary); background: rgba(37,99,235,.04);
+  }
+  .stamp-box img { width: 100%; height: 100%; display: block; pointer-events: none; -webkit-user-drag: none; }
+  .stamp-box .stamp-del {
+    position: absolute; top: -12px; left: -12px; width: 24px; height: 24px; border-radius: 50%;
+    background: var(--danger); color: white; font-size: 14px; line-height: 24px; text-align: center;
+    padding: 0; cursor: pointer;
+  }
+  .stamp-box .stamp-resize {
+    position: absolute; bottom: -8px; right: -8px; width: 18px; height: 18px; border-radius: 3px;
+    background: var(--primary); cursor: nwse-resize; border: 2px solid white;
+  }
+
+  .modal { position: fixed; inset: 0; background: rgba(17,24,39,.55); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 1rem; }
+  .modal-box { background: white; border-radius: 12px; padding: 1.4rem; max-width: 420px; width: 100%; }
+  .modal-box h2 { margin-top: 0; font-size: 1.1rem; }
+  .sig-pad-canvas {
+    width: 100%; height: 180px; border: 1.5px dashed #7c3aed; border-radius: 6px;
+    background: rgba(124,58,237,.05); touch-action: none; display: block;
+  }
+  .modal-actions { display: flex; gap: .6rem; margin-top: 1rem; flex-wrap: wrap; }
+  .modal-check { display: flex; align-items: center; gap: .4rem; font-size: .85rem; color: var(--text-muted); margin-top: .8rem; }
+
+  .saved-sig-grid { display: flex; flex-wrap: wrap; gap: .6rem; margin: .8rem 0; }
+  .saved-sig-item { position: relative; border: 1px solid var(--border); border-radius: 6px; padding: .3rem; cursor: pointer; background: #fff; }
+  .saved-sig-item img { width: 90px; height: 45px; object-fit: contain; display: block; }
+  .saved-sig-item:hover { border-color: var(--primary); }
+  .saved-sig-item .sig-del {
+    position: absolute; top: -8px; left: -8px; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--danger); color: white; font-size: 12px; line-height: 20px; text-align: center; padding: 0;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <img src="next1sign.JPG" alt="Next1 Sign" class="header-logo" />
+  <a href="index.html">← חזרה לאתר</a>
+</header>
+<div class="tool-banner">כלי חתימה מהיר - מעלים PDF, מוסיפים חתימה/חותמת, מורידים. שום דבר לא נשמר בשרת - הכל נשאר בדפדפן שלכם.</div>
+
+<main>
+  <div id="view-upload">
+    <div class="card">
+      <h2>העלאת מסמך לחתימה</h2>
+      <p>בוחרים קובץ PDF, ואז מוסיפים עליו חתימה - בציור, מחתימה שמורה מראש, או מתמונה של חותמת.</p>
+      <input type="file" id="pdf-file-input" accept="application/pdf" />
+      <p class="error" id="upload-error"></p>
+    </div>
+  </div>
+
+  <div id="view-editor" style="display:none">
+    <div class="stamp-toolbar" id="stamp-toolbar">
+      <button type="button" id="new-sig-btn">✍️ חתימה חדשה</button>
+      <button type="button" id="saved-sig-btn" class="secondary">חתימות שמורות</button>
+      <button type="button" id="upload-stamp-btn" class="secondary">📷 תמונת חותמת</button>
+      <input type="file" id="stamp-file-input" accept="image/*" style="display:none" />
+      <div id="placing-hint" class="placing-hint" style="display:none">
+        <span>לחצו על המסמך במקום הרצוי כדי למקם - אפשר למקם כמה פעמים</span>
+        <button type="button" class="secondary" id="cancel-place-btn">סיום מיקום</button>
+      </div>
+      <button type="button" id="download-btn" style="margin-right:auto;">הורדת PDF חתום</button>
+    </div>
+    <p id="editor-error" class="error"></p>
+    <div id="pdf-pages"></div>
+  </div>
+
+  <div id="view-done" style="display:none">
+    <div class="card">
+      <h2>המסמך החתום מוכן</h2>
+      <a id="download-link" style="display:inline-block; margin-top:1rem; background:var(--primary); color:white; padding:.6rem 1.2rem; border-radius:6px; text-decoration:none;">הורדת הקובץ החתום</a>
+      <p style="margin-top:1rem;"><button type="button" class="secondary" id="restart-btn">מסמך חדש</button></p>
+    </div>
+  </div>
+</main>
+
+<div id="sig-modal" class="modal" style="display:none">
+  <div class="modal-box">
+    <h2>ציור חתימה</h2>
+    <canvas id="sig-pad-canvas" class="sig-pad-canvas"></canvas>
+    <label class="modal-check"><input type="checkbox" id="save-sig-check" checked /> שמירת החתימה לשימוש הבא</label>
+    <div class="modal-actions">
+      <button type="button" id="sig-clear-btn" class="secondary">ניקוי</button>
+      <button type="button" id="sig-confirm-btn">שימוש בחתימה זו</button>
+      <button type="button" id="sig-cancel-btn" class="secondary">ביטול</button>
+    </div>
+  </div>
+</div>
+
+<div id="saved-sig-modal" class="modal" style="display:none">
+  <div class="modal-box">
+    <h2>חתימות שמורות</h2>
+    <div id="saved-sig-grid" class="saved-sig-grid"></div>
+    <p id="no-saved-sig-msg" style="display:none; color:var(--text-muted); font-size:.9rem;">אין עדיין חתימות שמורות - ציירו חתימה חדשה וסמנו "שמירה לשימוש הבא".</p>
+    <div class="modal-actions">
+      <button type="button" id="saved-sig-close-btn" class="secondary">סגירה</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/pdf-field-utils.js?v=5"></script>
+<script>
+const SAVED_SIGS_KEY = 'pdfsign_tool_saved_signatures';
+// שומרים את קובץ המקור עצמו, לא Uint8Array - pdf.js עלול "לרוקן" מאגר
+// שהועבר אליו (כמו ב-admin.html), אז קוראים bytes טריים בכל שימוש בפועל
+// (רינדור / הטבעה סופית) במקום לשתף buffer אחד בין שני הצרכים.
+let originalFile = null;
+let pdfDocJs = null;
+let pageBoxSizes = [];
+let placements = []; // { id, pageIndex, xPct, yPct, wPct, hPct, dataUrl, el }
+let pendingDataUrl = null;
+let placeCounter = 0;
+
+function showView(name) {
+  ['upload', 'editor', 'done'].forEach(v => {
+    document.getElementById('view-' + v).style.display = (v === name) ? 'block' : 'none';
+  });
+}
+
+// ─── טעינת PDF ומעלה שהוזנת ─────────────────────────────
+document.getElementById('pdf-file-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const errorEl = document.getElementById('upload-error');
+  errorEl.textContent = '';
+  try {
+    await loadScripts([PDF_LIB_SCRIPT_URL]);
+    await loadPdfJs();
+    originalFile = file;
+    await renderDocument();
+    showView('editor');
+  } catch (err) {
+    errorEl.textContent = 'שגיאה בטעינת הקובץ: ' + err.message;
+  }
+});
+
+async function renderDocument() {
+  pdfDocJs = await loadPdfDocument(new Uint8Array(await originalFile.arrayBuffer()));
+  const container = document.getElementById('pdf-pages');
+  container.innerHTML = '';
+  pageBoxSizes = [];
+  placements = [];
+
+  for (let i = 0; i < pdfDocJs.numPages; i++) {
+    const page = await pdfDocJs.getPage(i + 1);
+    const wrapper = document.createElement('div');
+    wrapper.className = 'page-wrapper';
+    wrapper.dataset.pageIndex = i;
+    const canvas = document.createElement('canvas');
+    wrapper.appendChild(canvas);
+    container.appendChild(wrapper);
+
+    // בלי רצפת רוחב מינימלית - מתאים לרוחב המסך בפועל, בדיוק כמו fill.html/demo.html.
+    const cssWidth = Math.min(container.clientWidth || 900, 900);
+    const boxSize = await renderPdfPageToCanvas(page, canvas, cssWidth);
+    wrapper.style.width = boxSize.cssWidth + 'px';
+    wrapper.style.height = boxSize.cssHeight + 'px';
+    pageBoxSizes[i] = boxSize;
+
+    wrapper.addEventListener('click', (e) => {
+      if (!pendingDataUrl) return;
+      if (e.target !== wrapper && e.target.tagName !== 'CANVAS') return;
+      const rect = wrapper.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+      addPlacement(i, clickX, clickY);
+    });
+  }
+}
+
+// ─── יצירת חותמת חדשה במיקום שנלחץ (ברירת מחדל: 130x55 פיקסלים, ממורכזת סביב הלחיצה) ───
+function addPlacement(pageIndex, clickX, clickY) {
+  const boxSize = pageBoxSizes[pageIndex];
+  const defaultWPx = Math.min(130, boxSize.cssWidth * 0.4);
+  const defaultHPx = defaultWPx * 0.42;
+  let leftPx = clickX - defaultWPx / 2;
+  let topPx = clickY - defaultHPx / 2;
+  leftPx = clamp(leftPx, 0, boxSize.cssWidth - defaultWPx);
+  topPx = clamp(topPx, 0, boxSize.cssHeight - defaultHPx);
+
+  const wrapper = document.querySelector('.page-wrapper[data-page-index="' + pageIndex + '"]');
+  const placement = {
+    id: 'p' + (++placeCounter),
+    pageIndex, dataUrl: pendingDataUrl,
+    xPct: leftPx / boxSize.cssWidth, yPct: topPx / boxSize.cssHeight,
+    wPct: defaultWPx / boxSize.cssWidth, hPct: defaultHPx / boxSize.cssHeight
+  };
+  placements.push(placement);
+  renderPlacementEl(placement, wrapper);
+}
+
+function renderPlacementEl(placement, wrapper) {
+  const boxSize = pageBoxSizes[placement.pageIndex];
+  const box = document.createElement('div');
+  box.className = 'stamp-box';
+  applyRectPx(box, pctRectToPx(placement, boxSize.cssWidth, boxSize.cssHeight));
+
+  const img = document.createElement('img');
+  img.src = placement.dataUrl;
+  box.appendChild(img);
+
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.className = 'stamp-del';
+  delBtn.textContent = '×';
+  delBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+  delBtn.addEventListener('click', () => {
+    placements = placements.filter(p => p.id !== placement.id);
+    box.remove();
+  });
+  box.appendChild(delBtn);
+
+  const resizeHandle = document.createElement('div');
+  resizeHandle.className = 'stamp-resize';
+  box.appendChild(resizeHandle);
+
+  attachDragResize(box, placement, resizeHandle);
+  wrapper.appendChild(box);
+  placement.el = box;
+}
+
+// ─── גרירה/שינוי גודל של חותמת שהוצבה - Pointer Events מאוחדים (עכבר+מגע) ───
+function attachDragResize(box, placement, resizeHandle) {
+  let mode = null; // 'drag' | 'resize'
+  let startX = 0, startY = 0, startLeft = 0, startTop = 0, startW = 0, startH = 0;
+
+  function onDown(e, m) {
+    mode = m;
+    // עלול להיכשל בנסיבות חריגות (למשל אירוע pointer מסונתז) - לא קריטי
+    // (הגרירה עדיין עובדת בלי capture כל עוד הסמן נשאר מעל האלמנט), אבל
+    // חובה try/catch כדי שהמשך הפונקציה (הגדרת נקודת ההתחלה) תמיד ירוץ.
+    try { box.setPointerCapture(e.pointerId); } catch (err) {}
+    startX = e.clientX; startY = e.clientY;
+    const boxSize = pageBoxSizes[placement.pageIndex];
+    startLeft = placement.xPct * boxSize.cssWidth;
+    startTop = placement.yPct * boxSize.cssHeight;
+    startW = placement.wPct * boxSize.cssWidth;
+    startH = placement.hPct * boxSize.cssHeight;
+    e.stopPropagation();
+    e.preventDefault();
+  }
+  box.addEventListener('pointerdown', (e) => onDown(e, 'drag'));
+  resizeHandle.addEventListener('pointerdown', (e) => onDown(e, 'resize'));
+
+  box.addEventListener('pointermove', (e) => {
+    if (!mode) return;
+    const boxSize = pageBoxSizes[placement.pageIndex];
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (mode === 'drag') {
+      const leftPx = clamp(startLeft + dx, 0, boxSize.cssWidth - startW);
+      const topPx = clamp(startTop + dy, 0, boxSize.cssHeight - startH);
+      placement.xPct = leftPx / boxSize.cssWidth;
+      placement.yPct = topPx / boxSize.cssHeight;
+    } else {
+      const wPx = clamp(startW + dx, 24, boxSize.cssWidth - startLeft);
+      const hPx = clamp(startH + dy, 16, boxSize.cssHeight - startTop);
+      placement.wPct = wPx / boxSize.cssWidth;
+      placement.hPct = hPx / boxSize.cssHeight;
+    }
+    applyRectPx(box, pctRectToPx(placement, boxSize.cssWidth, boxSize.cssHeight));
+  });
+  function stop(e) { mode = null; try { box.releasePointerCapture(e.pointerId); } catch (err) {} }
+  box.addEventListener('pointerup', stop);
+  box.addEventListener('pointercancel', stop);
+}
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+// ─── בחירת/יצירת חותמת פעילה למיקום (מצב "לחצו על המסמך") ───────
+function startPlacing(dataUrl) {
+  pendingDataUrl = dataUrl;
+  document.getElementById('placing-hint').style.display = 'flex';
+}
+document.getElementById('cancel-place-btn').addEventListener('click', () => {
+  pendingDataUrl = null;
+  document.getElementById('placing-hint').style.display = 'none';
+});
+
+// ─── ציור חתימה חדשה (מודל) ─────────────────────────────
+let currentSigPad = null;
+document.getElementById('new-sig-btn').addEventListener('click', () => {
+  document.getElementById('sig-modal').style.display = 'flex';
+  requestAnimationFrame(() => { currentSigPad = initSignaturePad(document.getElementById('sig-pad-canvas')); });
+});
+document.getElementById('sig-clear-btn').addEventListener('click', () => { if (currentSigPad) currentSigPad.clear(); });
+document.getElementById('sig-cancel-btn').addEventListener('click', () => { document.getElementById('sig-modal').style.display = 'none'; });
+document.getElementById('sig-confirm-btn').addEventListener('click', () => {
+  if (!currentSigPad || !currentSigPad.hasDrawn()) return;
+  const dataUrl = currentSigPad.getDataURL();
+  if (document.getElementById('save-sig-check').checked) saveSignature(dataUrl);
+  document.getElementById('sig-modal').style.display = 'none';
+  startPlacing(dataUrl);
+});
+
+function loadSavedSignatures() {
+  try { return JSON.parse(localStorage.getItem(SAVED_SIGS_KEY) || '[]'); } catch (err) { return []; }
+}
+function saveSignature(dataUrl) {
+  const list = loadSavedSignatures();
+  list.unshift({ id: 's' + Date.now(), dataUrl });
+  localStorage.setItem(SAVED_SIGS_KEY, JSON.stringify(list.slice(0, 10)));
+}
+
+// ─── חתימות שמורות (מודל) ────────────────────────────────
+document.getElementById('saved-sig-btn').addEventListener('click', () => {
+  renderSavedSigGrid();
+  document.getElementById('saved-sig-modal').style.display = 'flex';
+});
+document.getElementById('saved-sig-close-btn').addEventListener('click', () => {
+  document.getElementById('saved-sig-modal').style.display = 'none';
+});
+function renderSavedSigGrid() {
+  const list = loadSavedSignatures();
+  const grid = document.getElementById('saved-sig-grid');
+  grid.innerHTML = '';
+  document.getElementById('no-saved-sig-msg').style.display = list.length ? 'none' : 'block';
+  list.forEach(sig => {
+    const item = document.createElement('div');
+    item.className = 'saved-sig-item';
+    const img = document.createElement('img');
+    img.src = sig.dataUrl;
+    item.appendChild(img);
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'sig-del';
+    delBtn.textContent = '×';
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const updated = loadSavedSignatures().filter(s => s.id !== sig.id);
+      localStorage.setItem(SAVED_SIGS_KEY, JSON.stringify(updated));
+      renderSavedSigGrid();
+    });
+    item.appendChild(delBtn);
+    item.addEventListener('click', () => {
+      document.getElementById('saved-sig-modal').style.display = 'none';
+      startPlacing(sig.dataUrl);
+    });
+    grid.appendChild(item);
+  });
+}
+
+// ─── תמונת חותמת (העלאת קובץ) - עם הסרת רקע לבן אוטומטית ────────
+document.getElementById('upload-stamp-btn').addEventListener('click', () => {
+  document.getElementById('stamp-file-input').click();
+});
+document.getElementById('stamp-file-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    startPlacing(removeWhiteBackground(img));
+  };
+  img.src = URL.createObjectURL(file);
+});
+
+// הופך רקע בהיר (למשל דף לבן שצולם מתחת לחותמת) לשקוף, כדי שהחותמת תשב
+// בטבעיות על גבי המסמך במקום להופיע כמלבן לבן אטום.
+function removeWhiteBackground(img) {
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const threshold = 190;
+  for (let i = 0; i < data.length; i += 4) {
+    const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    if (brightness > threshold) {
+      const alpha = Math.max(0, 255 - (brightness - threshold) * 6);
+      data[i + 3] = Math.min(data[i + 3], alpha);
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
+// ─── הטבעת כל המיקומים במסמך והורדה ──────────────────────
+document.getElementById('download-btn').addEventListener('click', async () => {
+  const errorEl = document.getElementById('editor-error');
+  errorEl.textContent = '';
+  if (!placements.length) { errorEl.textContent = 'לא הוספתם עדיין חתימה/חותמת למסמך.'; return; }
+  try {
+    const pdfDoc = await PDFLib.PDFDocument.load(new Uint8Array(await originalFile.arrayBuffer()));
+    for (const p of placements) {
+      const page = pdfDoc.getPage(p.pageIndex);
+      const coords = pctFieldToPdfCoords(p, page.getWidth(), page.getHeight());
+      const pngBytes = await (await fetch(p.dataUrl)).arrayBuffer();
+      const img = await pdfDoc.embedPng(pngBytes);
+      page.drawImage(img, { x: coords.xPt, y: coords.yPt, width: coords.wPt, height: coords.hPt });
+    }
+    const bytes = await pdfDoc.save();
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const link = document.getElementById('download-link');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'signed.pdf';
+    showView('done');
+  } catch (err) {
+    errorEl.textContent = 'שגיאה ביצירת הקובץ החתום: ' + err.message;
+  }
+});
+
+document.getElementById('restart-btn').addEventListener('click', () => {
+  originalFile = null; pdfDocJs = null; placements = []; pendingDataUrl = null;
+  document.getElementById('pdf-file-input').value = '';
+  document.getElementById('pdf-pages').innerHTML = '';
+  showView('upload');
+});
+
+// ─── טעינת סקריפט חיצוני (זהה לתבנית ב-fill.html/admin.html) ─────
+function loadScripts(urls) {
+  return Promise.all(urls.map(url => new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('טעינת סקריפט נכשלה: ' + url));
+    document.head.appendChild(s);
+  })));
+}
+</script>
+</body>
+</html>
