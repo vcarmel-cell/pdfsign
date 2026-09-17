@@ -19,6 +19,10 @@
     background: #eff6ff; color: #1d4ed8; text-align: center; font-size: .85rem;
     padding: .6rem 1rem;
   }
+  .visit-counter {
+    background: #f3f4f6; color: var(--text-muted); text-align: center; font-size: .8rem;
+    padding: .35rem 1rem;
+  }
   main { max-width: 960px; margin: 0 auto; padding: 1rem 1rem 2rem 1rem; }
   .card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 1.4rem; max-width: 480px; margin: 3rem auto; text-align: center; }
   .card h2 { margin-top: 0; }
@@ -87,6 +91,7 @@
   <a href="index.html">← חזרה לאתר</a>
 </header>
 <div class="tool-banner">כלי חתימה מהיר - מעלים PDF, מוסיפים חתימה/חותמת, מורידים. שום דבר לא נשמר בשרת - הכל נשאר בדפדפן שלכם.</div>
+<div id="visit-counter" class="visit-counter" style="display:none">👀 <span id="visit-count">–</span> כניסות לדף</div>
 
 <main>
   <div id="view-upload">
@@ -147,6 +152,7 @@
   </div>
 </div>
 
+<script src="js/firebase-init.js"></script>
 <script src="js/pdf-field-utils.js?v=5"></script>
 <script>
 const SAVED_SIGS_KEY = 'pdfsign_tool_saved_signatures';
@@ -457,16 +463,27 @@ document.getElementById('restart-btn').addEventListener('click', () => {
   showView('upload');
 });
 
-// ─── טעינת סקריפט חיצוני (זהה לתבנית ב-fill.html/admin.html) ─────
-function loadScripts(urls) {
-  return Promise.all(urls.map(url => new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = url;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('טעינת סקריפט נכשלה: ' + url));
-    document.head.appendChild(s);
-  })));
+// ─── קאונטר כניסות גלוי לכולם (Firestore) - לא חוסם/לא קריטי לכלי עצמו:
+// נכשל בשקט אם Firebase לא זמין, כדי שהחתימה על PDF תמשיך לעבוד תמיד
+// גם בלי תלות ברשת/בשירות הזה. ראו stats/{statId} ב-firestore.rules. ────
+async function initVisitCounter() {
+  try {
+    await loadScripts(FIREBASE_SDK_URLS);
+    const { db, auth } = await fbInit();
+    await auth.signInAnonymously();
+    await db.collection('stats').doc('signToolViews').update({
+      count: firebase.firestore.FieldValue.increment(1)
+    });
+    db.collection('stats').doc('signToolViews').onSnapshot((snap) => {
+      if (!snap.exists) return;
+      document.getElementById('visit-count').textContent = (snap.data().count || 0).toLocaleString('he-IL');
+      document.getElementById('visit-counter').style.display = 'block';
+    });
+  } catch (err) {
+    console.warn('קאונטר הכניסות לא נטען:', err);
+  }
 }
+initVisitCounter();
 </script>
 </body>
 </html>

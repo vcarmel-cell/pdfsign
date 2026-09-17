@@ -190,5 +190,17 @@ service cloud.firestore {
         && (!('message' in request.resource.data) || (request.resource.data.message is string && request.resource.data.message.size() < 2000));
       allow update, delete: if isAdmin();
     }
+
+    // מונים גלויים לכולם (כמו קאונטר כניסות ל-sign-tool.html) - קריאה פתוחה
+    // לכל מחובר (כולל אנונימי), עדכון מוגבל להעלאה של בדיוק 1 בכל פעם, בלי
+    // לגעת בשדות אחרים. המסמך עצמו נוצר ידנית ע"י המנהל בקונסולה (עם count:0)
+    // ולא ניתן ליצירה/מחיקה מהלקוח, כדי שאי אפשר יהיה "לאפס" את המונה מבחוץ.
+    match /stats/{statId} {
+      allow get: if signedIn();
+      allow list, create, delete: if false;
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['count'])
+        && request.resource.data.count == resource.data.get('count', 0) + 1;
+    }
   }
 }
