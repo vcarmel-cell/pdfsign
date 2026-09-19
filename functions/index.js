@@ -9,7 +9,7 @@ admin.initializeApp();
 
 const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY');
 const ADMIN_EMAIL = 'v.carmel@gmail.com';
-const ALLOWED_ORIGINS = ['https://vcarmel-cell.github.io'];
+const ALLOWED_ORIGINS = ['https://vcarmel-cell.github.io', 'https://sign.next1.co.il', 'http://sign.next1.co.il'];
 // gemini-flash-latest הוא alias שגוגל שומרים מצביע על המודל ה"פלאש" הנוכחי
 // שלהם - נבחר בכוונה במקום שם מודל מוצמד (למשל gemini-2.5-flash), כי שמות
 // מודלים מוצמדים מתיישנים/מפסיקים להיות זמינים עם הזמן (ראינו את זה בפועל).
