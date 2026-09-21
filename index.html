@@ -13,40 +13,44 @@
 <link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;500;700;900&family=Assistant:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --paper: #eef1ef;
+    --paper: #EFF2F6;
     --paper-raised: #ffffff;
-    --ink: #1c232b;
-    --ink-soft: #57616b;
-    --ink-faint: #8b9299;
-    --stamp: #a4321f;
-    --stamp-ink: #8a2a19;
-    --line: #cfd3c8;
+    --ink: #10233F;
+    --ink-soft: #44546C;
+    --ink-faint: #5E6E88;
+    --stamp: #126EB1;
+    --stamp-ink: #0D5A93;
+    --line: #D3DBE6;
     --radius: 3px;
-    --shadow: 0 1px 2px rgba(28,35,43,.06), 0 8px 24px -12px rgba(28,35,43,.18);
+    --shadow: 0 1px 2px rgba(16,35,63,.06), 0 8px 24px -12px rgba(16,35,63,.18);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --paper: #14181a;
-      --paper-raised: #1b2123;
-      --ink: #ece8dc;
-      --ink-soft: #a8afa6;
-      --ink-faint: #767d75;
-      --stamp: #db6b4e;
-      --stamp-ink: #db6b4e;
-      --line: #333a3b;
+      --paper: #0C1626;
+      --paper-raised: #132139;
+      --ink: #E6EDF6;
+      --ink-soft: #A6B4C7;
+      --ink-faint: #8090A8;
+      --stamp: #4FA3E0;
+      --stamp-ink: #7DBBEB;
+      --line: #22334F;
       --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
     }
   }
   :root[data-theme="dark"] {
-    --paper: #14181a; --paper-raised: #1b2123; --ink: #ece8dc; --ink-soft: #a8afa6;
-    --ink-faint: #767d75; --stamp: #db6b4e; --stamp-ink: #db6b4e; --line: #333a3b;
+    --paper: #0C1626; --paper-raised: #132139; --ink: #E6EDF6; --ink-soft: #A6B4C7;
+    --ink-faint: #8090A8; --stamp: #4FA3E0; --stamp-ink: #7DBBEB; --line: #22334F;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
   }
   :root[data-theme="light"] {
-    --paper: #eef1ef; --paper-raised: #ffffff; --ink: #1c232b; --ink-soft: #57616b;
-    --ink-faint: #8b9299; --stamp: #a4321f; --stamp-ink: #8a2a19; --line: #cfd3c8;
-    --shadow: 0 1px 2px rgba(28,35,43,.06), 0 8px 24px -12px rgba(28,35,43,.18);
+    --paper: #EFF2F6; --paper-raised: #ffffff; --ink: #10233F; --ink-soft: #44546C;
+    --ink-faint: #5E6E88; --stamp: #126EB1; --stamp-ink: #0D5A93; --line: #D3DBE6;
+    --shadow: 0 1px 2px rgba(16,35,63,.06), 0 8px 24px -12px rgba(16,35,63,.18);
   }
+
+  :root, :root[data-theme="light"] { --on-stamp: #ffffff; }
+  @media (prefers-color-scheme: dark) { :root { --on-stamp: #08131F; } }
+  :root[data-theme="dark"] { --on-stamp: #08131F; }
 
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
@@ -118,7 +122,7 @@
     text-decoration: none; border: 1px solid transparent; cursor: pointer;
     transition: transform .12s ease, box-shadow .12s ease, background .15s ease;
   }
-  .btn-primary { background: var(--stamp); color: #fdf9f3; box-shadow: var(--shadow); }
+  .btn-primary { background: var(--stamp); color: var(--on-stamp); box-shadow: var(--shadow); }
   .btn-primary:hover { transform: translateY(-1px); background: var(--stamp-ink); }
   .btn-ghost { border-color: var(--line); color: var(--ink); }
   .btn-ghost:hover { border-color: var(--stamp); }
